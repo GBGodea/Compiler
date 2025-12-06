@@ -3,7 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-int line_num = 1;
+// Ќ≈ ќѕ–≈ƒ≈Ћя≈ћ здесь - берем из parser.y
+extern int line_num;
+
 %}
 
 %option noyywrap

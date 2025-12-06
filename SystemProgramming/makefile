@@ -1,76 +1,135 @@
-CC = gcc
-CFLAGS = -Wall -g
+﻿CC = gcc
+CFLAGS = -Wall -g -Wextra
 FLEX = flex
 BISON = bison
 
 LEXER_SRC = lexer.l
 PARSER_SRC = parser.y
-TARGET = parser
 AST_SRC = ast.c
+CFG_SRC = cfg_builder.c
+SEMANTIC_SRC = semantic.c
+CALLTREE_SRC = calltree.c
+MAIN_SRC = main.c
+
+TARGET = cfg_builder
 
 LEXER_C = lex.yy.c
 PARSER_C = parser.tab.c
 PARSER_H = parser.tab.h
-AST_O = ast.o
 
 LEXER_O = lex.yy.o
 PARSER_O = parser.tab.o
+AST_O = ast.o
+CFG_O = cfg_builder.o
+SEMANTIC_O = semantic.o
+CALLTREE_O = calltree.o
+MAIN_O = main.o
 
-build: all
+OBJECTS = $(PARSER_O) $(LEXER_O) $(AST_O) $(CFG_O) $(SEMANTIC_O) $(CALLTREE_O) $(MAIN_O)
 
 all: $(TARGET)
 
-$(TARGET): $(LEXER_O) $(PARSER_O) $(AST_O)
-	$(CC) $(CFLAGS) -o $@ $^ -lfl
+$(PARSER_C) $(PARSER_H): $(PARSER_SRC)
+	@echo "[*] Generating parser with bison..."
+	$(BISON) -d $(PARSER_SRC)
+	@echo "[+] Parser generated"
 
-$(LEXER_O): $(LEXER_C) $(PARSER_H)
-	$(CC) $(CFLAGS) -c $<
+$(LEXER_C): $(LEXER_SRC) $(PARSER_H)
+	@echo "[*] Generating lexer with flex..."
+	$(FLEX) $(LEXER_SRC)
+	@echo "[+] Lexer generated"
+
+$(LEXER_O): $(LEXER_C)
+	@echo "[*] Compiling lexer..."
+	$(CC) $(CFLAGS) -c $< -o $@
 
 $(PARSER_O): $(PARSER_C)
-	$(CC) $(CFLAGS) -c $<
+	@echo "[*] Compiling parser..."
+	$(CC) $(CFLAGS) -c $< -o $@
 
 $(AST_O): $(AST_SRC) ast.h
-	$(CC) $(CFLAGS) -c $(AST_SRC)
+	@echo "[*] Compiling AST..."
+	$(CC) $(CFLAGS) -c $< -o $@
 
-$(LEXER_C): $(LEXER_SRC)
-	$(FLEX) $<
+$(CFG_O): $(CFG_SRC) cfg.h ast.h semantic.h
+	@echo "[*] Compiling CFG builder (extended)..."
+	$(CC) $(CFLAGS) -c $< -o $@
 
-$(PARSER_C) $(PARSER_H): $(PARSER_SRC)
-	$(BISON) -d $<
+$(SEMANTIC_O): $(SEMANTIC_SRC) semantic.h ast.h
+	@echo "[*] Compiling semantic analyzer..."
+	$(CC) $(CFLAGS) -c $< -o $@
 
-clean:
-	rm -f $(LEXER_C) $(PARSER_C) $(PARSER_H) $(LEXER_O) $(PARSER_O) $(AST_O) $(TARGET) *.output ast.dot ast.png
+$(CALLTREE_O): $(CALLTREE_SRC) calltree.h ast.h
+	@echo "[*] Compiling call tree..."
+	$(CC) $(CFLAGS) -c $< -o $@
 
-distclean: clean
-	rm -f *~ *.bak
+$(MAIN_O): $(MAIN_SRC) ast.h cfg.h semantic.h calltree.h
+	@echo "[*] Compiling main..."
+	$(CC) $(CFLAGS) -c $< -o $@
 
-debug: CFLAGS += -DYYDEBUG=1
-debug: $(TARGET)
+$(TARGET): $(OBJECTS)
+	@echo "[*] Linking..."
+	$(CC) $(CFLAGS) -o $@ $^ -lfl
+	@echo "[+] Build complete: $(TARGET)"
 
 test: $(TARGET)
-	@echo "Testing parser..."
-	@echo 'method test() begin end;' | ./$(TARGET)
-
-visualize: $(TARGET)
-	@echo "Creating AST visualization..."
-	./$(TARGET) < test_program.txt
-	@if [ -f ast.dot ]; then \
-		echo "Generating PNG..."; \
-		dot -Tpng ast.dot -o ast.png; \
-		echo "AST visualization saved as ast.png"; \
+	@echo "[*] Running test..."
+	@if [ -f test.txt ]; then \
+		mkdir -p output; \
+		./$(TARGET) test.txt -o output; \
+		echo "[+] Test complete"; \
 	else \
-		echo "AST dot file not created"; \
+		echo "[!] test.txt not found"; \
 	fi
 
-help:
-	@echo "Available targets:"
-	@echo "  all         - Build parser (default)"
-	@echo "  clean       - Remove generated files"
-	@echo "  distclean   - Full cleanup"
-	@echo "  debug       - Build with debug info"
-	@echo "  test        - Test parser"
-	@echo "  visualize   - Create AST visualization"
-	@echo "  install-graphviz - Install Graphviz for visualization"
-	@echo "  help        - Show this help"
+visualize: test
+	@echo "[*] Generating visualizations..."
+	@if [ -f output/ast_output.dot ]; then \
+		dot -Tpng output/ast_output.dot -o output/ast_output.png; \
+		echo "[+] AST: output/ast_output.png"; \
+	fi
+	@if [ -f output/cfg_output.dot ]; then \
+		dot -Tpng output/cfg_output.dot -o output/cfg_output.png; \
+		echo "[+] CFG with expression trees: output/cfg_output.png"; \
+	fi
+	@if [ -f output/calltree_output.dot ]; then \
+		dot -Tpng output/calltree_output.dot -o output/calltree_output.png; \
+		echo "[+] Call Tree: output/calltree_output.png"; \
+	fi
 
-.PHONY: all clean distclean debug test help visualize install-graphviz
+clean:
+	@echo "[*] Cleaning..."
+	rm -f $(LEXER_C) $(PARSER_C) $(PARSER_H)
+	rm -f $(LEXER_O) $(PARSER_O) $(AST_O) $(CFG_O) $(SEMANTIC_O) $(CALLTREE_O) $(MAIN_O)
+	rm -f $(TARGET) *.output
+	@echo "[+] Clean complete"
+
+distclean: clean
+	rm -rf output/ *.dot *.png
+	@echo "[+] Distclean complete"
+
+help:
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════╗"
+	@echo "║      CFG Builder v3.0 - With Expression Trees            ║"
+	@echo "╚════════════════════════════════════════════════════════════╝"
+	@echo ""
+	@echo "Build targets:"
+	@echo "  make              - Build cfg_builder"
+	@echo "  make clean        - Remove build artifacts"
+	@echo "  make distclean    - Full cleanup"
+	@echo ""
+	@echo "Testing targets:"
+	@echo "  make test         - Test with test.txt"
+	@echo "  make visualize    - Test and generate PNG images"
+	@echo ""
+	@echo "Output files:"
+	@echo "  ast_output.dot    - Abstract Syntax Tree"
+	@echo "  cfg_output.dot    - Control Flow Graph WITH Expression Trees"
+	@echo "  calltree_output.dot - Call Tree (function calls)"
+	@echo ""
+	@echo "Usage:"
+	@echo "  ./cfg_builder test.txt -o output"
+	@echo ""
+
+.PHONY: all clean distclean test visualize help

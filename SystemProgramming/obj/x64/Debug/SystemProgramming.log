@@ -2,5 +2,37 @@
   Удаленное копирование исходных файлов в "localhost"
   Команда сборки не настроена, действие пропущено.
   Вызов "make", рабочий каталог: "/home/user/projects/SystemProgramming/"
-  make: Цель «build» не требует выполнения команд.
+  [*] Compiling CFG builder (extended)...
+  gcc -Wall -g -Wextra -c cfg_builder.c -o cfg_builder.o
+  
+  cfg_builder.c: In function ‘build_cfg_for_statement’:
+  cfg_builder.c:186:68: warning: ‘%s’ directive output may be truncated writing up to 1023 bytes into a region of size 1020 [-Wformat-truncation=]
+    186 |                     snprintf(error_label, sizeof(error_label), "❌ %s\n%s", label, node->error_message);
+        |                                                                    ^~       ~~~~~
+  cfg_builder.c:186:21: note: ‘snprintf’ output 6 or more bytes (assuming 1029) into a destination of size 1024
+    186 |                     snprintf(error_label, sizeof(error_label), "❌ %s\n%s", label, node->error_message);
+        |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  cfg_builder.c:350:74: warning: ‘%s’ directive output may be truncated writing up to 1023 bytes into a region of size 1014 [-Wformat-truncation=]
+    350 |                     snprintf(error_label, sizeof(error_label), "❌ UNTIL %s\n%s", label, until_node->error_message);
+        |                                                                          ^~       ~~~~~
+  cfg_builder.c:350:21: note: ‘snprintf’ output 12 or more bytes (assuming 1035) into a destination of size 1024
+    350 |                     snprintf(error_label, sizeof(error_label), "❌ UNTIL %s\n%s", label, until_node->error_message);
+        |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  cfg_builder.c:280:70: warning: ‘%s’ directive output may be truncated writing up to 1023 bytes into a region of size 1014 [-Wformat-truncation=]
+    280 |                 snprintf(error_label, sizeof(error_label), "❌ WHILE %s\n%s", label, loopcond->error_message);
+        |                                                                      ^~       ~~~~~
+  cfg_builder.c:280:17: note: ‘snprintf’ output 12 or more bytes (assuming 1035) into a destination of size 1024
+    280 |                 snprintf(error_label, sizeof(error_label), "❌ WHILE %s\n%s", label, loopcond->error_message);
+        |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  cfg_builder.c:214:67: warning: ‘%s’ directive output may be truncated writing up to 1023 bytes into a region of size 1017 [-Wformat-truncation=]
+    214 |                 snprintf(error_label, sizeof(error_label), "❌ IF %s\n%s", label, cond_node->error_message);
+        |                                                                   ^~       ~~~~~
+  cfg_builder.c:214:17: note: ‘snprintf’ output 9 or more bytes (assuming 1032) into a destination of size 1024
+    214 |                 snprintf(error_label, sizeof(error_label), "❌ IF %s\n%s", label, cond_node->error_message);
+        |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  
+  [*] Linking...
+  gcc -Wall -g -Wextra -o cfg_builder parser.tab.o lex.yy.o ast.o cfg_builder.o semantic.o calltree.o main.o -lfl
+  
+  [+] Build complete: cfg_builder
   

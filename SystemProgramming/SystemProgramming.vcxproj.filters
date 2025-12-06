@@ -1,0 +1,49 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Object Include="ast.o" />
+    <Object Include="lex.yy.o" />
+    <Object Include="parser.tab.o" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="ast.c" />
+    <ClCompile Include="lex.yy.c" />
+    <ClCompile Include="makefile" />
+    <ClCompile Include="parser.tab.c" />
+    <ClCompile Include="cfg_builder.c">
+      <Filter>Graph</Filter>
+    </ClCompile>
+    <ClCompile Include="main.c" />
+    <ClCompile Include="semantic.c">
+      <Filter>semantic</Filter>
+    </ClCompile>
+    <ClCompile Include="callgraph.c" />
+    <ClCompile Include="project.c" />
+    <ClCompile Include="calltree.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ast.h" />
+    <ClInclude Include="parser.tab.h" />
+    <ClInclude Include="cfg.h">
+      <Filter>Graph</Filter>
+    </ClInclude>
+    <ClInclude Include="semantic.h">
+      <Filter>semantic</Filter>
+    </ClInclude>
+    <ClInclude Include="callgraph.h" />
+    <ClInclude Include="project.h" />
+    <ClInclude Include="calltree.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="lexer.l" />
+    <None Include="parser.y" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Graph">
+      <UniqueIdentifier>{2cfb5139-62ea-4df0-9c94-23b68a4f45cf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="semantic">
+      <UniqueIdentifier>{cbc0b2d6-f760-48d7-8fd9-b459f9ff1fd3}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -8,7 +8,10 @@ int yylex();
 void yyerror(const char *s);
 
 extern char *yytext;
-extern int line_num;
+
+int line_num = 1;
+ASTNode* root_ast = NULL;
+
 %}
 
 %union {
@@ -203,18 +206,34 @@ identifierList:
     }
     ;
 
+// ИСПРАВЛЕНИЕ: statementBlock создаёт правильную иерархию
 statementBlock:
     BEGIN_KW statementList END SEMICOLON {
         $$ = createASTNode(AST_STATEMENT_BLOCK, "begin", line_num);
-        if ($2) addChild($$, $2);
+        if ($2) {
+            // Если есть список statements, добавляем его
+            addChild($$, $2);
+        }
     }
     ;
 
 statementList:
-    { $$ = NULL; }
+    { 
+        // Пустой список = NULL
+        $$ = NULL; 
+    }
+    | statement {
+        ASTNode* list = createASTNode(AST_STATEMENT_LIST, "statements", line_num);
+        addChild(list, $1);
+        $$ = list;
+    }
     | statementList statement {
+        // Последующие statements: добавляем к существующему списку
+        // $1 уже является AST_STATEMENT_LIST
         if ($1 == NULL) {
-            $$ = $2;
+            ASTNode* list = createASTNode(AST_STATEMENT_LIST, "statements", line_num);
+            addChild(list, $2);
+            $$ = list;
         } else {
             $$ = addChild($1, $2);
         }
@@ -270,9 +289,19 @@ expr:
         $$ = $2;
     }
     | expr LPAREN exprList RPAREN {
-        $$ = createASTNode(AST_CALL_EXPR, "call", line_num);
+        const char* func_name = "call";
+        if ($1->type == AST_IDENTIFIER && $1->value) {
+            func_name = $1->value;
+        }
+    
+        $$ = createASTNode(AST_CALL_EXPR, func_name, line_num);
         addChild($$, $1);
-        if ($3) addChild($$, $3);
+        if ($3) {
+            addChild($$, $3);
+        } else {
+            ASTNode* empty_args = createASTNode(AST_STATEMENT_LIST, "args", line_num);
+            addChild($$, empty_args);
+        }
     }
     | expr LBRACKET exprList RBRACKET {
         $$ = createASTNode(AST_INDEX_EXPR, "index", line_num);
@@ -316,9 +345,14 @@ exprList:
     ;
 
 exprListNonEmpty:
-    expr { $$ = $1; }
+    expr { 
+        ASTNode* list = createASTNode(AST_STATEMENT_LIST, "args", line_num);
+        addChild(list, $1);
+        $$ = list;
+    }
     | exprListNonEmpty COMMA expr {
-        $$ = addChild($1, $3);
+        addChild($1, $3);
+        $$ = $1;
     }
     ;
 
@@ -349,24 +383,4 @@ unOp:
 
 void yyerror(const char *s) {
     fprintf(stderr, "Parse error: (%s) at token '%s' line %d\n", s, yytext, line_num);
-}
-
-int main() {
-    int result = yyparse();
-    if (result == 0) {
-        printf("Parsing successful\n");
-        if (root_ast) {
-            FILE* dotFile = fopen("ast.dot", "w");
-            if (dotFile) {
-                printASTDot(root_ast, dotFile);
-                fclose(dotFile);
-                printf("AST saved to ast.dot\n");
-                printf("To view: dot -Tpng ast.dot -o ast.png\n");
-            }
-            freeAST(root_ast);
-        }
-    } else {
-        printf("Parsing failed\n");
-    }
-    return result;
 }
