@@ -4,20 +4,23 @@
 #include <string.h>
 #include <stdio.h>
 
-// ============================================================
-// ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
-// ============================================================
-
+/* Статические переменные для внутреннего состояния */
 static CFGNode* current_loop_exit = NULL;
 static SymbolTable* current_symbol_table = NULL;
+static int ast_tree_counter = 0;
+
+/* Вспомогательные функции */
+static const char* get_operation_name_internal(ASTNodeType type, const char* value);
+static void export_ast_tree_to_dot(ASTNode* node, FILE* f, int tree_id, int* node_counter);
+static void ast_to_string(ASTNode* node, char* buf, int max_len);
+static int segment_ends_with_break(CFGNode* exit_node);
+static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt);
+static CFGSegment build_cfg_for_statements(CFG* cfg, ASTNode* stmt_list);
+static void mark_error_recursive(ASTNode* node, const char* error_msg);
 
 void cfg_set_symbol_table(SymbolTable* table) {
     current_symbol_table = table;
 }
-
-// ============================================================
-// СОЗДАНИЕ И УПРАВЛЕНИЕ УЗЛАМИ CFG
-// ============================================================
 
 CFG* cfg_create(void) {
     CFG* cfg = (CFG*)malloc(sizeof(CFG));
@@ -81,10 +84,6 @@ void cfg_add_conditional_edge(CFGNode* from, CFGNode* to) {
     }
 }
 
-// ============================================================
-// ПРЕОБРАЗОВАНИЕ ВЫРАЖЕНИЯ В СТРОКУ
-// ============================================================
-
 static void ast_to_string(ASTNode* node, char* buf, int max_len) {
     if (!node || !buf) return;
 
@@ -121,12 +120,6 @@ static int segment_ends_with_break(CFGNode* exit_node) {
     if (!exit_node) return 0;
     return exit_node->is_break;
 }
-
-// ============================================================
-// ПОСТРОЕНИЕ CFG ИЗ AST
-// ============================================================
-
-static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt);
 
 static CFGSegment build_cfg_for_statements(CFG* cfg, ASTNode* stmt_list) {
     if (!cfg || !stmt_list) {
@@ -458,11 +451,7 @@ void cfg_build_from_ast(CFG* cfg, ASTNode* ast) {
     printf("[+] CFG generated with %d nodes\n", cfg->node_count);
 }
 
-// ============================================================
-// ФУНКЦИЯ ДЛЯ ПРЕОБРАЗОВАНИЯ ТИПА УЗЛА В ИМЕНА ОПЕРАЦИЙ
-// ============================================================
-
-static const char* get_operation_name(ASTNodeType type, const char* value) {
+static const char* get_operation_name_internal(ASTNodeType type, const char* value) {
     if (value) return value;
 
     switch (type) {
@@ -490,20 +479,20 @@ static const char* get_operation_name(ASTNodeType type, const char* value) {
     }
 }
 
-// ============================================================
-// ЭКСПОРТ ДЕРЕВА ОПЕРАЦИЙ В DOT
-// ============================================================
+/* Публичная версия для использования другими модулями */
+const char* get_operation_name(ASTNodeType type, const char* value) {
+    return get_operation_name_internal(type, value);
+}
 
 static void export_ast_tree_to_dot(ASTNode* node, FILE* f, int tree_id, int* node_counter) {
     if (!node || !f) return;
 
     int node_id = (*node_counter)++;
-    const char* op_name = get_operation_name(node->type, node->value);
+    const char* op_name = get_operation_name_internal(node->type, node->value);
 
     char node_label[1024] = "";
 
     if (node->type == AST_IDENTIFIER) {
-        // 🔴 ПРОВЕРЯЕМ, ЕСТЬ ЛИ ИМЯ
         if (node->value && node->value[0] != '\0') {
             snprintf(node_label, sizeof(node_label), "Load(%s)", node->value);
         }
@@ -512,7 +501,6 @@ static void export_ast_tree_to_dot(ASTNode* node, FILE* f, int tree_id, int* nod
         }
     }
     else if (node->type == AST_LITERAL) {
-        // 🔴 ПРОВЕРЯЕМ, ЕСТЬ ЛИ ЗНАЧЕНИЕ
         if (node->value && node->value[0] != '\0') {
             snprintf(node_label, sizeof(node_label), "Const(%s)", node->value);
         }
@@ -581,18 +569,13 @@ static void export_ast_tree_to_dot(ASTNode* node, FILE* f, int tree_id, int* nod
         snprintf(node_label, sizeof(node_label), "%s", op_word);
     }
     else {
-        // 🔴 УБЕДИМСЯ, ЧТО op_name НЕ ПУСТОЙ
         if (op_name && op_name[0] != '\0') {
             snprintf(node_label, sizeof(node_label), "%s", op_name);
         }
         else {
-            // Для отладки
             snprintf(node_label, sizeof(node_label), "NodeType:%d", node->type);
         }
     }
-
-    // 🔴 ИСПРАВЛЯЕМ ДУБЛИРОВАНИЕ УЗЛОВ
-    // Убираем лишний вывод - только один fprintf для узла
 
     if (node->has_error && node->error_message) {
         char error_label[2048];
@@ -603,19 +586,16 @@ static void export_ast_tree_to_dot(ASTNode* node, FILE* f, int tree_id, int* nod
             tree_id, node_id, error_label);
     }
     else if (node->type == AST_IDENTIFIER) {
-        // Идентификаторы - зеленые
         fprintf(f, "    tree%d_node%d [label=\"%s\", shape=box, "
             "fillcolor=\"#A8E6CF\", style=filled];\n",
             tree_id, node_id, node_label);
     }
     else if (node->type == AST_LITERAL) {
-        // Литералы - желтые
         fprintf(f, "    tree%d_node%d [label=\"%s\", shape=box, "
             "fillcolor=\"#FFD93D\", style=filled];\n",
             tree_id, node_id, node_label);
     }
     else {
-        // Остальные узлы - голубые
         fprintf(f, "    tree%d_node%d [label=\"%s\", shape=ellipse, "
             "fillcolor=lightblue, style=filled];\n",
             tree_id, node_id, node_label);
@@ -678,12 +658,6 @@ void escape_string_for_dot(const char* input, char* output, size_t max_len) {
     output[j] = '\0';
 }
 
-static int ast_tree_counter = 0;
-
-// ============================================================
-// ЭКСПОРТ В DOT С ДЕРЕВЬЯМИ ОПЕРАЦИЙ
-// ============================================================
-
 void cfg_export_dot(CFG* cfg, const char* filename) {
     if (!cfg || !filename) return;
 
@@ -698,11 +672,9 @@ void cfg_export_dot(CFG* cfg, const char* filename) {
     fprintf(f, "  node [fontname=\"Courier\", fontsize=10];\n");
     fprintf(f, "  edge [fontname=\"Courier\", fontsize=9];\n\n");
 
-    // 🔴 ВЫВОД УЗЛОВ CFG С ОШИБКАМИ
     for (int i = 0; i < cfg->node_count; i++) {
         CFGNode* node = cfg->nodes[i];
 
-        // Формируем label с учетом ошибок
         char final_label[2048];
         if (node->has_error && node->error_message) {
             char escaped_error[1024];
@@ -724,7 +696,6 @@ void cfg_export_dot(CFG* cfg, const char* filename) {
             snprintf(final_label, sizeof(final_label), "Node %d", node->id);
         }
 
-        // Устанавливаем стиль в зависимости от ошибки и типа
         if (node->has_error) {
             fprintf(f, "  node%d [label=\"%s\", "
                 "shape=box, fillcolor=\"#FF6B6B\", "
@@ -802,10 +773,6 @@ void cfg_export_dot(CFG* cfg, const char* filename) {
     fclose(f);
 }
 
-// ============================================================
-// ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ПОМЕТКИ ОШИБОК
-// ============================================================
-
 static void mark_error_recursive(ASTNode* node, const char* error_msg) {
     if (!node) return;
 
@@ -815,10 +782,6 @@ static void mark_error_recursive(ASTNode* node, const char* error_msg) {
         strcpy(node->error_message, error_msg);
     }
 }
-
-// ============================================================
-// СЕМАНТИЧЕСКИЙ АНАЛИЗ
-// ============================================================
 
 void check_expression_semantics(ASTNode* expr, SymbolTable* symbol_table, CFGNode* cfg_node) {
     if (!expr || !symbol_table) return;
@@ -967,10 +930,6 @@ void cfg_check_semantics(CFG* cfg, SymbolTable* symbol_table) {
         check_expression_semantics(node->op_tree, symbol_table, node);
     }
 }
-
-// ============================================================
-// ОСВОБОЖДЕНИЕ ПАМЯТИ
-// ============================================================
 
 void cfg_free(CFG* cfg) {
     if (!cfg) return;

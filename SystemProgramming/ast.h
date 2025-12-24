@@ -26,28 +26,27 @@ typedef enum {
     AST_INDEX_EXPR,
     AST_IDENTIFIER,
     AST_LITERAL,
-
-    // Операции присваивания
     AST_ASSIGNMENT,
     AST_INDEXED_ASSIGNMENT,
-
-    // Бинарные операции
     AST_ARITHMETIC_EXPR,
-
-    // Унарные операции
     AST_ADDR_OF,
-
-    // Операции с памятью
     AST_DEREF,
     AST_MEMBER_ACCESS,
-
-    // Управление потоком
     AST_RETURN_STATEMENT,
-    AST_CONTINUE_STATEMENT
+    AST_CONTINUE_STATEMENT,
+
+    /* Добавьте эти значения: */
+    AST_ID_LIST,           // Список идентификаторов
+    AST_STRING_LITERAL,    // Строковый литерал
+    AST_VAR_DECL_LIST,     // Список объявлений переменных
+    AST_ARRAY_LITERAL,     // Литерал массива
+    AST_ARRAY_TYPE         // Тип массива
+
 } ASTNodeType;
 
 typedef struct ASTNode {
     ASTNodeType type;
+    int has_explicit_type;
     int line_number;
     struct ASTNode** children;
     int child_count;
@@ -62,6 +61,10 @@ ASTNode* addChild(ASTNode* parent, ASTNode* child);
 void printASTDot(ASTNode* node, FILE* file);
 void freeAST(ASTNode* node);
 const char* getNodeTypeName(ASTNodeType type);
+
+/* Добавляем функции для работы с ошибками */
+void ast_set_error(ASTNode* node, const char* error_message);
+void ast_set_data_type(ASTNode* node, const char* data_type);
 
 extern ASTNode* root_ast;
 

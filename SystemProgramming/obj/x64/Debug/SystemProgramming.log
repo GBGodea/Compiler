@@ -2,37 +2,137 @@
   Удаленное копирование исходных файлов в "localhost"
   Команда сборки не настроена, действие пропущено.
   Вызов "make", рабочий каталог: "/home/user/projects/SystemProgramming/"
-  [*] Compiling CFG builder (extended)...
-  gcc -Wall -g -Wextra -c cfg_builder.c -o cfg_builder.o
+  [*] Compiling new code generator (codegen_cfg)...
+  gcc -Wall -g -Wextra -c codegen_cfg.c -o codegen_cfg.o
   
-  cfg_builder.c: In function ‘build_cfg_for_statement’:
-  cfg_builder.c:186:68: warning: ‘%s’ directive output may be truncated writing up to 1023 bytes into a region of size 1020 [-Wformat-truncation=]
-    186 |                     snprintf(error_label, sizeof(error_label), "❌ %s\n%s", label, node->error_message);
-        |                                                                    ^~       ~~~~~
-  cfg_builder.c:186:21: note: ‘snprintf’ output 6 or more bytes (assuming 1029) into a destination of size 1024
-    186 |                     snprintf(error_label, sizeof(error_label), "❌ %s\n%s", label, node->error_message);
-        |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  cfg_builder.c:350:74: warning: ‘%s’ directive output may be truncated writing up to 1023 bytes into a region of size 1014 [-Wformat-truncation=]
-    350 |                     snprintf(error_label, sizeof(error_label), "❌ UNTIL %s\n%s", label, until_node->error_message);
-        |                                                                          ^~       ~~~~~
-  cfg_builder.c:350:21: note: ‘snprintf’ output 12 or more bytes (assuming 1035) into a destination of size 1024
-    350 |                     snprintf(error_label, sizeof(error_label), "❌ UNTIL %s\n%s", label, until_node->error_message);
-        |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  cfg_builder.c:280:70: warning: ‘%s’ directive output may be truncated writing up to 1023 bytes into a region of size 1014 [-Wformat-truncation=]
-    280 |                 snprintf(error_label, sizeof(error_label), "❌ WHILE %s\n%s", label, loopcond->error_message);
-        |                                                                      ^~       ~~~~~
-  cfg_builder.c:280:17: note: ‘snprintf’ output 12 or more bytes (assuming 1035) into a destination of size 1024
-    280 |                 snprintf(error_label, sizeof(error_label), "❌ WHILE %s\n%s", label, loopcond->error_message);
-        |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  cfg_builder.c:214:67: warning: ‘%s’ directive output may be truncated writing up to 1023 bytes into a region of size 1017 [-Wformat-truncation=]
-    214 |                 snprintf(error_label, sizeof(error_label), "❌ IF %s\n%s", label, cond_node->error_message);
-        |                                                                   ^~       ~~~~~
-  cfg_builder.c:214:17: note: ‘snprintf’ output 9 or more bytes (assuming 1032) into a destination of size 1024
-    214 |                 snprintf(error_label, sizeof(error_label), "❌ IF %s\n%s", label, cond_node->error_message);
-        |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  codegen_cfg.c:32:13: warning: ‘add_local_variable’ declared ‘static’ but never defined [-Wunused-function]
+     32 | static void add_local_variable(CodeGenerator* gen, const char* var_name, int type_id);
+        |             ^~~~~~~~~~~~~~~~~~
+  codegen_cfg.c:337:20: warning: ‘get_arith_mnemonic’ defined but not used [-Wunused-function]
+    337 | static const char* get_arith_mnemonic(const char* op, int type_id)
+        |                    ^~~~~~~~~~~~~~~~~~
+  codegen_cfg.c: In function ‘codegen_emit_literal’:
+  
+  codegen_cfg.c:614:24: warning: ‘%d’ directive writing between 1 and 10 bytes into a region of size 7 [-Wformat-overflow=]
+    614 |     sprintf(reg_str, "r%d", reg_id);
+        |                        ^~
+  codegen_cfg.c:614:22: note: directive argument in the range [0, 2147483647]
+    614 |     sprintf(reg_str, "r%d", reg_id);
+        |                      ^~~~~
+  codegen_cfg.c:614:5: note: ‘sprintf’ output between 3 and 12 bytes into a destination of size 8
+    614 |     sprintf(reg_str, "r%d", reg_id);
+        |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  codegen_cfg.c: In function ‘codegen_load_variable’:
+  codegen_cfg.c:1357:30: warning: ‘%d’ directive writing between 1 and 10 bytes into a region of size 7 [-Wformat-overflow=]
+   1357 |     sprintf(value_reg_str, "r%d", value_reg);
+        |                              ^~
+  codegen_cfg.c:1357:28: note: directive argument in the range [0, 2147483647]
+   1357 |     sprintf(value_reg_str, "r%d", value_reg);
+        |                            ^~~~~
+  codegen_cfg.c:1357:5: note: ‘sprintf’ output between 3 and 12 bytes into a destination of size 8
+   1357 |     sprintf(value_reg_str, "r%d", value_reg);
+        |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  codegen_cfg.c:1370:29: warning: ‘%d’ directive writing between 1 and 10 bytes into a region of size 7 [-Wformat-overflow=]
+   1370 |     sprintf(addr_reg_str, "r%d", addr_reg);
+        |                             ^~
+  codegen_cfg.c:1370:27: note: directive argument in the range [0, 2147483647]
+   1370 |     sprintf(addr_reg_str, "r%d", addr_reg);
+        |                           ^~~~~
+  codegen_cfg.c:1370:5: note: ‘sprintf’ output between 3 and 12 bytes into a destination of size 8
+   1370 |     sprintf(addr_reg_str, "r%d", addr_reg);
+        |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  codegen_cfg.c: In function ‘codegen_emit_identifier’:
+  codegen_cfg.c:576:33: warning: ‘%d’ directive writing between 1 and 10 bytes into a region of size 7 [-Wformat-overflow=]
+    576 |         sprintf(addr_reg_str, "r%d", addr_reg);
+        |                                 ^~
+  codegen_cfg.c:576:31: note: directive argument in the range [0, 2147483647]
+    576 |         sprintf(addr_reg_str, "r%d", addr_reg);
+        |                               ^~~~~
+  codegen_cfg.c:576:9: note: ‘sprintf’ output between 3 and 12 bytes into a destination of size 8
+    576 |         sprintf(addr_reg_str, "r%d", addr_reg);
+        |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  codegen_cfg.c:577:34: warning: ‘%d’ directive writing between 1 and 10 bytes into a region of size 7 [-Wformat-overflow=]
+    577 |         sprintf(value_reg_str, "r%d", value_reg);
+        |                                  ^~
+  codegen_cfg.c:577:32: note: directive argument in the range [0, 2147483647]
+    577 |         sprintf(value_reg_str, "r%d", value_reg);
+        |                                ^~~~~
+  codegen_cfg.c:577:9: note: ‘sprintf’ output between 3 and 12 bytes into a destination of size 8
+    577 |         sprintf(value_reg_str, "r%d", value_reg);
+        |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  codegen_cfg.c: In function ‘codegen_store_variable’:
+  codegen_cfg.c:1416:29: warning: ‘%d’ directive writing between 1 and 10 bytes into a region of size 7 [-Wformat-overflow=]
+   1416 |     sprintf(addr_reg_str, "r%d", addr_reg);
+        |                             ^~
+  codegen_cfg.c:1416:27: note: directive argument in the range [0, 2147483647]
+   1416 |     sprintf(addr_reg_str, "r%d", addr_reg);
+        |                           ^~~~~
+  codegen_cfg.c:1416:5: note: ‘sprintf’ output between 3 and 12 bytes into a destination of size 8
+   1416 |     sprintf(addr_reg_str, "r%d", addr_reg);
+        |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  codegen_cfg.c: In function ‘codegen_emit_assignment’:
+  codegen_cfg.c:955:33: warning: ‘%d’ directive writing between 1 and 10 bytes into a region of size 7 [-Wformat-overflow=]
+    955 |         sprintf(addr_reg_str, "r%d", addr_reg);
+        |                                 ^~
+  codegen_cfg.c:955:31: note: directive argument in the range [0, 2147483647]
+    955 |         sprintf(addr_reg_str, "r%d", addr_reg);
+        |                               ^~~~~
+  codegen_cfg.c:955:9: note: ‘sprintf’ output between 3 and 12 bytes into a destination of size 8
+    955 |         sprintf(addr_reg_str, "r%d", addr_reg);
+        |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  codegen_cfg.c:956:34: warning: ‘%d’ directive writing between 1 and 10 bytes into a region of size 7 [-Wformat-overflow=]
+    956 |         sprintf(value_reg_str, "r%d", value_reg);
+        |                                  ^~
+  codegen_cfg.c:956:32: note: directive argument in the range [0, 2147483647]
+    956 |         sprintf(value_reg_str, "r%d", value_reg);
+        |                                ^~~~~
+  codegen_cfg.c:956:9: note: ‘sprintf’ output between 3 and 12 bytes into a destination of size 8
+    956 |         sprintf(value_reg_str, "r%d", value_reg);
+        |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  codegen_cfg.c: In function ‘codegen_emit_binary_expr’:
+  codegen_cfg.c:442:25: warning: ‘%d’ directive writing between 1 and 10 bytes into a region of size 7 [-Wformat-overflow=]
+    442 |     sprintf(left_str, "r%d", left_reg);
+        |                         ^~
+  codegen_cfg.c:442:23: note: directive argument in the range [0, 2147483647]
+    442 |     sprintf(left_str, "r%d", left_reg);
+        |                       ^~~~~
+  codegen_cfg.c:442:5: note: ‘sprintf’ output between 3 and 12 bytes into a destination of size 8
+    442 |     sprintf(left_str, "r%d", left_reg);
+        |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  codegen_cfg.c:443:26: warning: ‘%d’ directive writing between 1 and 10 bytes into a region of size 7 [-Wformat-overflow=]
+    443 |     sprintf(right_str, "r%d", right_reg);
+        |                          ^~
+  codegen_cfg.c:443:24: note: directive argument in the range [0, 2147483647]
+    443 |     sprintf(right_str, "r%d", right_reg);
+        |                        ^~~~~
+  codegen_cfg.c:443:5: note: ‘sprintf’ output between 3 and 12 bytes into a destination of size 8
+    443 |     sprintf(right_str, "r%d", right_reg);
+        |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  codegen_cfg.c:444:27: warning: ‘%d’ directive writing between 1 and 10 bytes into a region of size 7 [-Wformat-overflow=]
+    444 |     sprintf(result_str, "r%d", left_reg);
+        |                           ^~
+  codegen_cfg.c:444:25: note: directive argument in the range [0, 2147483647]
+    444 |     sprintf(result_str, "r%d", left_reg);
+        |                         ^~~~~
+  codegen_cfg.c:444:5: note: ‘sprintf’ output between 3 and 12 bytes into a destination of size 8
+    444 |     sprintf(result_str, "r%d", left_reg);
+        |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  codegen_cfg.c: In function ‘codegen_generate_cfg_node’:
+  codegen_cfg.c:1127:36: warning: ‘%d’ directive writing between 1 and 10 bytes into a region of size 7 [-Wformat-overflow=]
+   1127 |                 sprintf(reg_str, "r%d", reg_id);
+        |                                    ^~
+  codegen_cfg.c:1127:34: note: directive argument in the range [0, 2147483647]
+   1127 |                 sprintf(reg_str, "r%d", reg_id);
+        |                                  ^~~~~
+  codegen_cfg.c:1127:17: note: ‘sprintf’ output between 3 and 12 bytes into a destination of size 8
+   1127 |                 sprintf(reg_str, "r%d", reg_id);
+        |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  
+  [*] Compiling main...
+  gcc -Wall -g -Wextra -c main.c -o main.o
   
   [*] Linking...
-  gcc -Wall -g -Wextra -o cfg_builder parser.tab.o lex.yy.o ast.o cfg_builder.o semantic.o calltree.o main.o -lfl
+  gcc -Wall -g -Wextra -o cfg_builder parser.tab.o lex.yy.o ast.o cfg_builder.o semantic.o calltree.o codegen_cfg.o main.o -lfl
   
   [+] Build complete: cfg_builder
   

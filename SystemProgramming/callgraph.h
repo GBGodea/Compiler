@@ -3,29 +3,17 @@
 
 #include <stdio.h>
 
-// ============================================================
-// ТИП ВЫЗОВА ФУНКЦИИ
-// ============================================================
-
 typedef struct {
-    char* caller_func;      // Функция, которая вызывает
-    char* callee_func;      // Функция, которая вызывается
-    int call_count;         // Количество вызовов
+    char* caller_func;      
+    char* callee_func;      
+    int call_count;         
 } FunctionCall;
-
-// ============================================================
-// ГРАФ ВЫЗОВОВ
-// ============================================================
 
 typedef struct {
     FunctionCall* calls;
     int call_count;
     int max_calls;
 } CallGraph;
-
-// ============================================================
-// ФУНКЦИИ
-// ============================================================
 
 CallGraph* callgraph_create(void);
 void callgraph_add_call(CallGraph* cg, const char* caller, const char* callee);

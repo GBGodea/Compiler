@@ -3,10 +3,6 @@
 #include <string.h>
 #include <stdio.h>
 
-// ============================================================
-// СОЗДАНИЕ ГРАФА ВЫЗОВОВ
-// ============================================================
-
 CallGraph* callgraph_create(void) {
     CallGraph* cg = (CallGraph*)malloc(sizeof(CallGraph));
     cg->max_calls = 256;
@@ -15,23 +11,16 @@ CallGraph* callgraph_create(void) {
     return cg;
 }
 
-// ============================================================
-// ДОБАВЛЕНИЕ ВЫЗОВА
-// ============================================================
-
 void callgraph_add_call(CallGraph* cg, const char* caller, const char* callee) {
     if (!cg || !caller || !callee) return;
 
-    // Игнорируем встроенные функции
     if (strcmp(callee, "unknown") == 0) return;
 
-    // Расширяем массив, если нужно
     if (cg->call_count >= cg->max_calls) {
         cg->max_calls *= 2;
         cg->calls = (FunctionCall*)realloc(cg->calls, cg->max_calls * sizeof(FunctionCall));
     }
 
-    // Проверяем, есть ли уже такой вызов
     for (int i = 0; i < cg->call_count; i++) {
         if (strcmp(cg->calls[i].caller_func, caller) == 0 &&
             strcmp(cg->calls[i].callee_func, callee) == 0) {
@@ -40,7 +29,6 @@ void callgraph_add_call(CallGraph* cg, const char* caller, const char* callee) {
         }
     }
 
-    // Добавляем новый вызов
     FunctionCall* call = &cg->calls[cg->call_count];
     call->caller_func = (char*)malloc(strlen(caller) + 1);
     strcpy(call->caller_func, caller);
@@ -50,10 +38,6 @@ void callgraph_add_call(CallGraph* cg, const char* caller, const char* callee) {
 
     cg->call_count++;
 }
-
-// ============================================================
-// ЭКСПОРТ В DOT
-// ============================================================
 
 void callgraph_export_dot(CallGraph* cg, const char* filename) {
     if (!cg || !filename) return;
@@ -69,12 +53,10 @@ void callgraph_export_dot(CallGraph* cg, const char* filename) {
     fprintf(f, "  node [shape=box, fontname=\"Courier\", fontsize=10];\n");
     fprintf(f, "  edge [fontname=\"Courier\", fontsize=9];\n\n");
 
-    // Собираем уникальные функции
     const char** functions = (const char**)malloc(256 * sizeof(char*));
     int func_count = 0;
 
     for (int i = 0; i < cg->call_count; i++) {
-        // Добавляем caller
         int found = 0;
         for (int j = 0; j < func_count; j++) {
             if (strcmp(functions[j], cg->calls[i].caller_func) == 0) {
@@ -86,7 +68,6 @@ void callgraph_export_dot(CallGraph* cg, const char* filename) {
             functions[func_count++] = cg->calls[i].caller_func;
         }
 
-        // Добавляем callee
         found = 0;
         for (int j = 0; j < func_count; j++) {
             if (strcmp(functions[j], cg->calls[i].callee_func) == 0) {
@@ -99,16 +80,13 @@ void callgraph_export_dot(CallGraph* cg, const char* filename) {
         }
     }
 
-    // Выводим узлы
     fprintf(f, "  // Functions\n");
     for (int i = 0; i < func_count; i++) {
-        // Раскрашиваем main в зелёный, остальные в белый
         const char* color = strcmp(functions[i], "main") == 0 ? "lightgreen" : "white";
         fprintf(f, "  \"%s\" [fillcolor=%s, style=filled];\n", functions[i], color);
     }
 
     fprintf(f, "\n  // Calls\n");
-    // Выводим рёбра
     for (int i = 0; i < cg->call_count; i++) {
         if (cg->calls[i].call_count == 1) {
             fprintf(f, "  \"%s\" -> \"%s\";\n",
@@ -125,10 +103,6 @@ void callgraph_export_dot(CallGraph* cg, const char* filename) {
     fclose(f);
 }
 
-// ============================================================
-// ПЕЧАТЬ РЕЗЮМЕ
-// ============================================================
-
 void callgraph_print_summary(CallGraph* cg) {
     if (!cg) return;
 
@@ -140,7 +114,6 @@ void callgraph_print_summary(CallGraph* cg) {
 
     printf("Total function calls: %d\n\n", cg->call_count);
 
-    // Группируем по вызывающим функциям
     const char** callers = (const char**)malloc(256 * sizeof(char*));
     int caller_count = 0;
 
@@ -157,7 +130,6 @@ void callgraph_print_summary(CallGraph* cg) {
         }
     }
 
-    // Выводим по вызывающим функциям
     for (int i = 0; i < caller_count; i++) {
         printf("  %s() calls:\n", callers[i]);
         for (int j = 0; j < cg->call_count; j++) {
@@ -170,10 +142,6 @@ void callgraph_print_summary(CallGraph* cg) {
     printf("\n");
     free(callers);
 }
-
-// ============================================================
-// ОСВОБОЖДЕНИЕ ПАМЯТИ
-// ============================================================
 
 void callgraph_free(CallGraph* cg) {
     if (!cg) return;

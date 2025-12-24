@@ -4,10 +4,6 @@
 #include <stdio.h>
 #include <sys/stat.h>
 
-// ============================================================
-// СОЗДАНИЕ ПРОЕКТА
-// ============================================================
-
 Project* project_create(void) {
     Project* proj = (Project*)malloc(sizeof(Project));
 
@@ -24,10 +20,6 @@ Project* project_create(void) {
 
     return proj;
 }
-
-// ============================================================
-// ДОБАВЛЕНИЕ ФАЙЛА
-// ============================================================
 
 void project_add_file(Project* proj, const char* filename, const char* filepath, ASTNode* ast) {
     if (!proj || !filename || !ast) return;
@@ -53,10 +45,6 @@ void project_add_file(Project* proj, const char* filename, const char* filepath,
     proj->file_count++;
 }
 
-// ============================================================
-// ПОСТРОЕНИЕ CFG ДЛЯ ВСЕХ ФУНКЦИЙ
-// ============================================================
-
 static char* get_file_basename(const char* filepath) {
     const char* filename = filepath;
     for (int i = strlen(filepath) - 1; i >= 0; i--) {
@@ -69,7 +57,6 @@ static char* get_file_basename(const char* filepath) {
     char* basename = (char*)malloc(strlen(filename) + 1);
     strcpy(basename, filename);
 
-    // Удаляем расширение
     for (int i = strlen(basename) - 1; i >= 0; i--) {
         if (basename[i] == '.') {
             basename[i] = '\0';
@@ -83,17 +70,14 @@ static char* get_file_basename(const char* filepath) {
 void project_build_cfgs(Project* proj) {
     if (!proj) return;
 
-    // Для каждого файла
     for (int f = 0; f < proj->file_count; f++) {
         ASTNode* ast = proj->files[f].ast;
         if (!ast || ast->type != AST_PROGRAM) continue;
 
-        // Для каждой функции в файле
         for (int i = 0; i < ast->child_count; i++) {
             ASTNode* func_def = ast->children[i];
             if (func_def->type != AST_FUNCTION_DEF) continue;
 
-            // Получаем имя функции
             char func_name[256] = "unknown";
             if (func_def->child_count > 0 &&
                 func_def->children[0]->type == AST_FUNCTION_SIGNATURE) {
@@ -102,18 +86,15 @@ void project_build_cfgs(Project* proj) {
                 }
             }
 
-            // Расширяем массив функций, если нужно
             if (proj->function_count >= proj->max_functions) {
                 proj->max_functions *= 2;
                 proj->functions = (FunctionInfo*)realloc(proj->functions,
                     proj->max_functions * sizeof(FunctionInfo));
             }
 
-            // Создаём CFG для этой функции
             CFG* cfg = cfg_create();
             cfg_build_from_ast(cfg, func_def);
 
-            // Добавляем в проект
             FunctionInfo* func_info = &proj->functions[proj->function_count];
             func_info->function_name = (char*)malloc(strlen(func_name) + 1);
             strcpy(func_info->function_name, func_name);
@@ -130,28 +111,18 @@ void project_build_cfgs(Project* proj) {
     }
 }
 
-// ============================================================
-// ПОСТРОЕНИЕ ГРАФА ВЫЗОВОВ
-// ============================================================
-
 static void extract_function_calls(CFG* cfg, const char* func_name, CallGraph* cg) {
     if (!cfg || !func_name || !cg) return;
 
-    // Проходим по всем узлам CFG
     for (int i = 0; i < cfg->node_count; i++) {
         CFGNode* node = cfg->nodes[i];
 
         if (!node->label) continue;
-
-        // Ищем вызовы функций в label
-        // Паттерн: "func_name(arg1, arg2, ...)"
         const char* label = node->label;
         int label_len = strlen(label);
 
         for (int j = 0; j < label_len - 1; j++) {
-            // Ищем открывающую скобку
             if (label[j] == '(') {
-                // Извлекаем имя функции перед скобкой
                 int k = j - 1;
                 while (k >= 0 && label[k] == ' ') k--;
 
@@ -168,7 +139,6 @@ static void extract_function_calls(CFG* cfg, const char* func_name, CallGraph* c
                     strncpy(called_func, label + k + 1, end - k);
                     called_func[end - k] = '\0';
 
-                    // Добавляем вызов
                     callgraph_add_call(cg, func_name, called_func);
                 }
             }
@@ -179,30 +149,22 @@ static void extract_function_calls(CFG* cfg, const char* func_name, CallGraph* c
 void project_build_callgraph(Project* proj) {
     if (!proj || !proj->callgraph) return;
 
-    // Для каждой функции в проекте
     for (int i = 0; i < proj->function_count; i++) {
         FunctionInfo* func = &proj->functions[i];
         extract_function_calls(func->cfg, func->function_name, proj->callgraph);
     }
 }
 
-// ============================================================
-// ЭКСПОРТ ПРОЕКТА
-// ============================================================
-
 void project_export(Project* proj, const char* output_dir) {
     if (!proj) return;
 
     printf("\n[*] Exporting project...\n");
 
-    // Экспортируем CFG для каждой функции
     for (int i = 0; i < proj->function_count; i++) {
         FunctionInfo* func = &proj->functions[i];
 
-        // Получаем имя файла без расширения
         char* basename = get_file_basename(func->source_file->filename);
 
-        // Формируем имя выходного файла: basename.funcname.dot
         char output_file[512];
         if (output_dir && strlen(output_dir) > 0) {
             snprintf(output_file, sizeof(output_file), "%s/%s.%s.dot",
@@ -219,7 +181,6 @@ void project_export(Project* proj, const char* output_dir) {
         free(basename);
     }
 
-    // Экспортируем граф вызовов
     char callgraph_file[512];
     if (output_dir && strlen(output_dir) > 0) {
         snprintf(callgraph_file, sizeof(callgraph_file), "%s/callgraph.dot", output_dir);
@@ -238,10 +199,6 @@ void project_export(Project* proj, const char* output_dir) {
 
     printf("[+] Export complete\n");
 }
-
-// ============================================================
-// ПЕЧАТЬ РЕЗЮМЕ
-// ============================================================
 
 void project_print_summary(Project* proj) {
     if (!proj) return;
@@ -267,10 +224,6 @@ void project_print_summary(Project* proj) {
     printf("\n");
     callgraph_print_summary(proj->callgraph);
 }
-
-// ============================================================
-// ОСВОБОЖДЕНИЕ ПАМЯТИ
-// ============================================================
 
 void project_free(Project* proj) {
     if (!proj) return;

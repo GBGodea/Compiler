@@ -42,7 +42,7 @@ ASTNode* root_ast = NULL;
 
 %type <node> source sourceItem funcDef funcSignature argDef argDefList argDefListNonEmpty
 %type <node> typeRef body varDeclarations identifierList statementBlock statementList statement
-%type <node> expr exprList exprListNonEmpty binOp unOp commaList commaListNonEmpty
+%type <node> expr exprList exprListNonEmpty binOp unOp commaList commaListNonEmpty optionalType
 
 %right ASSIGN
 %left OR
@@ -170,27 +170,29 @@ body:
     }
     ;
 
+/* ИСПРАВЛЕННЫЕ ПРАВИЛА ДЛЯ varDeclarations */
+optionalType:
+    { $$ = NULL; }  /* Пустой тип */
+    | COLON typeRef { $$ = $2; }  /* Явный тип */
+    ;
+
 varDeclarations:
     { $$ = NULL; }
-    | varDeclarations VAR identifierList COLON typeRef SEMICOLON {
+    | varDeclarations VAR identifierList optionalType SEMICOLON {
         ASTNode* varDecl = createASTNode(AST_VAR_DECLARATION, "var", line_num);
-        addChild(varDecl, $3);
-        addChild(varDecl, $5);
-
-        if ($1 == NULL) {
-            $$ = varDecl;
-        } else {
-            $$ = addChild($1, varDecl);
+        addChild(varDecl, $3);  /* identifierList */
+        if ($4) {  /* optionalType, если есть */
+            addChild(varDecl, $4);
         }
-    }
-    | varDeclarations VAR identifierList SEMICOLON {
-        ASTNode* varDecl = createASTNode(AST_VAR_DECLARATION, "var", line_num);
-        addChild(varDecl, $3);
 
         if ($1 == NULL) {
-            $$ = varDecl;
+            // Создаем узел списка для хранения всех объявлений
+            $$ = createASTNode(AST_STATEMENT_LIST, "var_declarations", line_num);
+            addChild($$, varDecl);
         } else {
-            $$ = addChild($1, varDecl);
+            // $1 уже является узлом списка, добавляем новое объявление в него
+            addChild($1, varDecl);
+            $$ = $1;
         }
     }
     ;
@@ -206,12 +208,10 @@ identifierList:
     }
     ;
 
-// ИСПРАВЛЕНИЕ: statementBlock создаёт правильную иерархию
 statementBlock:
     BEGIN_KW statementList END SEMICOLON {
         $$ = createASTNode(AST_STATEMENT_BLOCK, "begin", line_num);
         if ($2) {
-            // Если есть список statements, добавляем его
             addChild($$, $2);
         }
     }
@@ -219,7 +219,6 @@ statementBlock:
 
 statementList:
     { 
-        // Пустой список = NULL
         $$ = NULL; 
     }
     | statement {
@@ -228,8 +227,6 @@ statementList:
         $$ = list;
     }
     | statementList statement {
-        // Последующие statements: добавляем к существующему списку
-        // $1 уже является AST_STATEMENT_LIST
         if ($1 == NULL) {
             ASTNode* list = createASTNode(AST_STATEMENT_LIST, "statements", line_num);
             addChild(list, $2);
@@ -258,13 +255,13 @@ statement:
         addChild($$, $2);
         addChild($$, $4);
     }
-    | REPEAT statement WHILE expr SEMICOLON {
-        $$ = createASTNode(AST_REPEAT_STATEMENT, "repeat-while", line_num);
+    | REPEAT statement UNTIL expr SEMICOLON {
+        $$ = createASTNode(AST_REPEAT_STATEMENT, "repeat-until", line_num);
         addChild($$, $2);
         addChild($$, $4);
     }
-    | REPEAT statement UNTIL expr SEMICOLON {
-        $$ = createASTNode(AST_REPEAT_STATEMENT, "repeat-until", line_num);
+    | REPEAT statement WHILE expr SEMICOLON {
+        $$ = createASTNode(AST_REPEAT_STATEMENT, "repeat-while", line_num);
         addChild($$, $2);
         addChild($$, $4);
     }

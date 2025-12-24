@@ -92,6 +92,7 @@
     <ClCompile Include="callgraph.c" />
     <ClCompile Include="calltree.c" />
     <ClCompile Include="cfg_builder.c" />
+    <ClCompile Include="codegen_cfg.c" />
     <ClCompile Include="lex.yy.c" />
     <ClCompile Include="main.c" />
     <ClCompile Include="makefile" />
@@ -104,6 +105,7 @@
     <ClInclude Include="callgraph.h" />
     <ClInclude Include="calltree.h" />
     <ClInclude Include="cfg.h" />
+    <ClInclude Include="codegen_cfg.h" />
     <ClInclude Include="parser.tab.h" />
     <ClInclude Include="project.h" />
     <ClInclude Include="semantic.h" />

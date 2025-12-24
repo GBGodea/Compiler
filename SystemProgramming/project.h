@@ -6,31 +6,19 @@
 #include "callgraph.h"
 #include "semantic.h"
 
-// ============================================================
-// ИСХОДНЫЙ ФАЙЛ
-// ============================================================
-
 typedef struct {
-    char* filename;         // Имя файла (например, "test.txt")
-    char* filepath;         // Полный путь
+    char* filename;       
+    char* filepath;      
     ASTNode* ast;
 } SourceFile;
 
-// ============================================================
-// ИНФОРМАЦИЯ О ФУНКЦИИ
-// ============================================================
-
 typedef struct {
     char* function_name;
-    char* signature;        // Строковое представление сигнатуры
+    char* signature;       
     CFG* cfg;
     SourceFile* source_file;
     int line_number;
 } FunctionInfo;
-
-// ============================================================
-// ПРОЕКТ
-// ============================================================
 
 typedef struct {
     SourceFile* files;
@@ -44,10 +32,6 @@ typedef struct {
     CallGraph* callgraph;
     SymbolTable* global_symbols;
 } Project;
-
-// ============================================================
-// ФУНКЦИИ
-// ============================================================
 
 Project* project_create(void);
 void project_add_file(Project* proj, const char* filename, const char* filepath, ASTNode* ast);

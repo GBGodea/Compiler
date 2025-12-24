@@ -20,6 +20,9 @@
     <ClCompile Include="callgraph.c" />
     <ClCompile Include="project.c" />
     <ClCompile Include="calltree.c" />
+    <ClCompile Include="codegen_cfg.c">
+      <Filter>codegen</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ast.h" />
@@ -33,6 +36,9 @@
     <ClInclude Include="callgraph.h" />
     <ClInclude Include="project.h" />
     <ClInclude Include="calltree.h" />
+    <ClInclude Include="codegen_cfg.h">
+      <Filter>codegen</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="lexer.l" />
@@ -44,6 +50,9 @@
     </Filter>
     <Filter Include="semantic">
       <UniqueIdentifier>{cbc0b2d6-f760-48d7-8fd9-b459f9ff1fd3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="codegen">
+      <UniqueIdentifier>{7638bf46-c09b-428c-a6a0-26e0fc863e95}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>
