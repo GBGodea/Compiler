@@ -11,7 +11,10 @@ typedef enum {
     CFG_START,
     CFG_END,
     CFG_MERGE,
-    CFG_ERROR
+    CFG_ERROR,
+    CFG_RETURN,
+    CFG_VAR_DECL,
+    CFG_BREAK
 } CFGNodeType;
 
 typedef struct CFGNode {
@@ -22,6 +25,13 @@ typedef struct CFGNode {
     ASTNode* op_tree;
     struct CFGNode* defaultNext;
     struct CFGNode* conditionalNext;
+
+    ASTNode** expr_trees;
+    int expr_tree_count;
+
+    char* function_name;        // Название функции, к которой относится узел
+    int is_function_entry;      // 1 если это точка входа в функцию
+    int is_function_exit;
 
     int has_error;
     char* error_message;
@@ -55,7 +65,9 @@ void cfg_build_from_ast(CFG* cfg, ASTNode* ast);
 void cfg_export_dot(CFG* cfg, const char* filename);
 
 void cfg_set_symbol_table(SymbolTable* table);
-void check_expression_semantics(ASTNode* expr, SymbolTable* symbol_table, CFGNode* cfg_node);
+// Добавим функцию, которая принимает явный scope_id
+void check_expression_semantics_with_scope(ASTNode* expr, SymbolTable* symbol_table,
+    CFGNode* cfg_node, int function_scope_id);
 void cfg_check_semantics(CFG* cfg, SymbolTable* symbol_table);
 
 void cfg_free(CFG* cfg);

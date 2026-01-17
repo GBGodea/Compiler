@@ -18,6 +18,7 @@ typedef enum {
     AST_IF_STATEMENT,
     AST_WHILE_STATEMENT,
     AST_REPEAT_STATEMENT,
+    AST_FOR_STATEMENT,        /* <- добавлено */
     AST_BREAK_STATEMENT,
     AST_EXPR_STATEMENT,
     AST_BINARY_EXPR,
@@ -34,8 +35,11 @@ typedef enum {
     AST_MEMBER_ACCESS,
     AST_RETURN_STATEMENT,
     AST_CONTINUE_STATEMENT,
+    AST_ARRAY_ACCESS,
+    AST_ARGUMENTLIST,
+    AST_BLOCK,
 
-    /* Добавьте эти значения: */
+    /* Дополнительные значения */
     AST_ID_LIST,           // Список идентификаторов
     AST_STRING_LITERAL,    // Строковый литерал
     AST_VAR_DECL_LIST,     // Список объявлений переменных

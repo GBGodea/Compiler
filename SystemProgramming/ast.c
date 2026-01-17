@@ -67,6 +67,7 @@ const char* getNodeTypeName(ASTNodeType type) {
     case AST_MEMBER_ACCESS:     return "MemberAccess";
     case AST_RETURN_STATEMENT:  return "ReturnStatement";
     case AST_CONTINUE_STATEMENT:return "ContinueStatement";
+    case AST_ARGUMENTLIST:      return "ArgumentList";
 
         /* Добавьте эти строки: */
     case AST_ID_LIST:           return "IdList";

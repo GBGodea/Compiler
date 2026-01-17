@@ -23,7 +23,6 @@ typedef struct {
 CallTree* calltree_create(void);
 CallTreeNode* calltree_create_node(CallTree* ct, const char* func_name);
 void calltree_add_call(CallTree* ct, const char* caller, const char* callee);
-void calltree_build_from_ast(CallTree* ct, ASTNode* ast);
 void calltree_export_dot(CallTree* ct, const char* filename);
 void calltree_free(CallTree* ct);
 

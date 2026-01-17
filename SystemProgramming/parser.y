@@ -42,7 +42,8 @@ ASTNode* root_ast = NULL;
 
 %type <node> source sourceItem funcDef funcSignature argDef argDefList argDefListNonEmpty
 %type <node> typeRef body varDeclarations identifierList statementBlock statementList statement
-%type <node> expr exprList exprListNonEmpty binOp unOp commaList commaListNonEmpty optionalType
+%type <node> expr logic_expr comp_expr add_expr mul_expr unary_expr postfix_expr primary_expr exprList exprListNonEmpty
+%type <node> commaList commaListNonEmpty optionalType
 
 %right ASSIGN
 %left OR
@@ -159,23 +160,22 @@ commaListNonEmpty:
     }
     ;
 
+/* ИЗМЕНЕНИЕ 1: Упрощаем body - создаем только один список операторов */
 body:
-    varDeclarations statementBlock {
+    varDeclarations BEGIN_KW statementList END SEMICOLON {
         $$ = createASTNode(AST_STATEMENT_BLOCK, "body", line_num);
-        if ($1) addChild($$, $1);
-        addChild($$, $2);
-    }
-    | statementBlock {
-        $$ = $1;
+        if ($1) {
+            /* Добавляем объявления переменных как часть тела */
+            addChild($$, $1);
+        }
+        if ($3) {
+            /* Добавляем операторы */
+            addChild($$, $3);
+        }
     }
     ;
 
-/* ИСПРАВЛЕННЫЕ ПРАВИЛА ДЛЯ varDeclarations */
-optionalType:
-    { $$ = NULL; }  /* Пустой тип */
-    | COLON typeRef { $$ = $2; }  /* Явный тип */
-    ;
-
+/* ИЗМЕНЕНИЕ 2: Улучшаем varDeclarations */
 varDeclarations:
     { $$ = NULL; }
     | varDeclarations VAR identifierList optionalType SEMICOLON {
@@ -186,15 +186,19 @@ varDeclarations:
         }
 
         if ($1 == NULL) {
-            // Создаем узел списка для хранения всех объявлений
+            /* Создаем узел списка для всех объявлений */
             $$ = createASTNode(AST_STATEMENT_LIST, "var_declarations", line_num);
             addChild($$, varDecl);
         } else {
-            // $1 уже является узлом списка, добавляем новое объявление в него
-            addChild($1, varDecl);
-            $$ = $1;
+            /* Добавляем новое объявление в существующий список */
+            $$ = addChild($1, varDecl);
         }
     }
+    ;
+
+optionalType:
+    { $$ = NULL; }  /* Пустой тип */
+    | COLON typeRef { $$ = $2; }  /* Явный тип */
     ;
 
 identifierList:
@@ -208,8 +212,15 @@ identifierList:
     }
     ;
 
+/* ИЗМЕНЕНИЕ 3: Упрощаем statementBlock - только для явных begin-end */
 statementBlock:
-    BEGIN_KW statementList END SEMICOLON {
+    BEGIN_KW statementList END {
+        $$ = createASTNode(AST_STATEMENT_BLOCK, "begin", line_num);
+        if ($2) {
+            addChild($$, $2);
+        }
+    }
+    | BEGIN_KW statementList END SEMICOLON {
         $$ = createASTNode(AST_STATEMENT_BLOCK, "begin", line_num);
         if ($2) {
             addChild($$, $2);
@@ -217,20 +228,19 @@ statementBlock:
     }
     ;
 
+/* ИЗМЕНЕНИЕ 4: Улучшаем statementList */
 statementList:
     { 
         $$ = NULL; 
     }
     | statement {
-        ASTNode* list = createASTNode(AST_STATEMENT_LIST, "statements", line_num);
-        addChild(list, $1);
-        $$ = list;
+        $$ = createASTNode(AST_STATEMENT_LIST, "statements", line_num);
+        addChild($$, $1);
     }
     | statementList statement {
         if ($1 == NULL) {
-            ASTNode* list = createASTNode(AST_STATEMENT_LIST, "statements", line_num);
-            addChild(list, $2);
-            $$ = list;
+            $$ = createASTNode(AST_STATEMENT_LIST, "statements", line_num);
+            addChild($$, $2);
         } else {
             $$ = addChild($1, $2);
         }
@@ -274,18 +284,117 @@ statement:
     }
     ;
 
+/* ГРАММАТИКА ВЫРАЖЕНИЙ С УЧЕТОМ ПРИОРИТЕТОВ */
+
 expr:
-    expr binOp expr {
-        $$ = addChild($2, $1);
+    logic_expr { $$ = $1; }
+    | logic_expr ASSIGN expr {
+        $$ = createASTNode(AST_ASSIGNMENT, ":=", line_num);
+        addChild($$, $1);
         addChild($$, $3);
     }
-    | unOp expr %prec UMINUS {
-        $$ = addChild($1, $2);
+    ;
+
+logic_expr:
+    comp_expr { $$ = $1; }
+    | logic_expr OR comp_expr {
+        $$ = createASTNode(AST_BINARY_EXPR, "||", line_num);
+        addChild($$, $1);
+        addChild($$, $3);
     }
-    | LPAREN expr RPAREN {
-        $$ = $2;
+    | logic_expr AND comp_expr {
+        $$ = createASTNode(AST_BINARY_EXPR, "&&", line_num);
+        addChild($$, $1);
+        addChild($$, $3);
     }
-    | expr LPAREN exprList RPAREN {
+    ;
+
+comp_expr:
+    add_expr { $$ = $1; }
+    | comp_expr EQ add_expr {
+        $$ = createASTNode(AST_BINARY_EXPR, "==", line_num);
+        addChild($$, $1);
+        addChild($$, $3);
+    }
+    | comp_expr NE add_expr {
+        $$ = createASTNode(AST_BINARY_EXPR, "!=", line_num);
+        addChild($$, $1);
+        addChild($$, $3);
+    }
+    | comp_expr LT add_expr {
+        $$ = createASTNode(AST_BINARY_EXPR, "<", line_num);
+        addChild($$, $1);
+        addChild($$, $3);
+    }
+    | comp_expr LE add_expr {
+        $$ = createASTNode(AST_BINARY_EXPR, "<=", line_num);
+        addChild($$, $1);
+        addChild($$, $3);
+    }
+    | comp_expr GT add_expr {
+        $$ = createASTNode(AST_BINARY_EXPR, ">", line_num);
+        addChild($$, $1);
+        addChild($$, $3);
+    }
+    | comp_expr GE add_expr {
+        $$ = createASTNode(AST_BINARY_EXPR, ">=", line_num);
+        addChild($$, $1);
+        addChild($$, $3);
+    }
+    ;
+
+add_expr:
+    mul_expr { $$ = $1; }
+    | add_expr PLUS mul_expr {
+        $$ = createASTNode(AST_BINARY_EXPR, "+", line_num);
+        addChild($$, $1);
+        addChild($$, $3);
+    }
+    | add_expr MINUS mul_expr {
+        $$ = createASTNode(AST_BINARY_EXPR, "-", line_num);
+        addChild($$, $1);
+        addChild($$, $3);
+    }
+    ;
+
+mul_expr:
+    unary_expr { $$ = $1; }
+    | mul_expr MUL unary_expr {
+        $$ = createASTNode(AST_BINARY_EXPR, "*", line_num);
+        addChild($$, $1);
+        addChild($$, $3);
+    }
+    | mul_expr DIV unary_expr {
+        $$ = createASTNode(AST_BINARY_EXPR, "/", line_num);
+        addChild($$, $1);
+        addChild($$, $3);
+    }
+    | mul_expr MOD unary_expr {
+        $$ = createASTNode(AST_BINARY_EXPR, "%", line_num);
+        addChild($$, $1);
+        addChild($$, $3);
+    }
+    ;
+
+unary_expr:
+    postfix_expr { $$ = $1; }
+    | NOT unary_expr {
+        $$ = createASTNode(AST_UNARY_EXPR, "!", line_num);
+        addChild($$, $2);
+    }
+    | MINUS unary_expr %prec UMINUS {
+        $$ = createASTNode(AST_UNARY_EXPR, "-", line_num);
+        addChild($$, $2);
+    }
+    | PLUS unary_expr %prec UMINUS {
+        $$ = createASTNode(AST_UNARY_EXPR, "+", line_num);
+        addChild($$, $2);
+    }
+    ;
+
+postfix_expr:
+    primary_expr { $$ = $1; }
+    | postfix_expr LPAREN exprList RPAREN {
         const char* func_name = "call";
         if ($1->type == AST_IDENTIFIER && $1->value) {
             func_name = $1->value;
@@ -300,12 +409,15 @@ expr:
             addChild($$, empty_args);
         }
     }
-    | expr LBRACKET exprList RBRACKET {
+    | postfix_expr LBRACKET exprList RBRACKET {
         $$ = createASTNode(AST_INDEX_EXPR, "index", line_num);
         addChild($$, $1);
         if ($3) addChild($$, $3);
     }
-    | IDENTIFIER { 
+    ;
+
+primary_expr:
+    IDENTIFIER { 
         $$ = createASTNode(AST_IDENTIFIER, $1, line_num);
         free($1);
     }
@@ -334,6 +446,9 @@ expr:
         $$ = createASTNode(AST_LITERAL, $1, line_num);
         free($1);
     }
+    | LPAREN expr RPAREN {
+        $$ = $2;
+    }
     ;
 
 exprList:
@@ -351,29 +466,6 @@ exprListNonEmpty:
         addChild($1, $3);
         $$ = $1;
     }
-    ;
-
-binOp:
-    ASSIGN { $$ = createASTNode(AST_BINARY_EXPR, ":=", line_num); }
-    | PLUS { $$ = createASTNode(AST_BINARY_EXPR, "+", line_num); }
-    | MINUS { $$ = createASTNode(AST_BINARY_EXPR, "-", line_num); }
-    | MUL { $$ = createASTNode(AST_BINARY_EXPR, "*", line_num); }
-    | DIV { $$ = createASTNode(AST_BINARY_EXPR, "/", line_num); }
-    | MOD { $$ = createASTNode(AST_BINARY_EXPR, "%", line_num); }
-    | EQ { $$ = createASTNode(AST_BINARY_EXPR, "==", line_num); }
-    | NE { $$ = createASTNode(AST_BINARY_EXPR, "!=", line_num); }
-    | LT { $$ = createASTNode(AST_BINARY_EXPR, "<", line_num); }
-    | LE { $$ = createASTNode(AST_BINARY_EXPR, "<=", line_num); }
-    | GT { $$ = createASTNode(AST_BINARY_EXPR, ">", line_num); }
-    | GE { $$ = createASTNode(AST_BINARY_EXPR, ">=", line_num); }
-    | AND { $$ = createASTNode(AST_BINARY_EXPR, "&&", line_num); }
-    | OR { $$ = createASTNode(AST_BINARY_EXPR, "||", line_num); }
-    ;
-
-unOp:
-    NOT { $$ = createASTNode(AST_UNARY_EXPR, "!", line_num); }
-    | MINUS { $$ = createASTNode(AST_UNARY_EXPR, "-", line_num); }
-    | PLUS { $$ = createASTNode(AST_UNARY_EXPR, "+", line_num); }
     ;
 
 %%

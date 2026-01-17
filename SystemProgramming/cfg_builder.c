@@ -8,18 +8,156 @@
 static CFGNode* current_loop_exit = NULL;
 static SymbolTable* current_symbol_table = NULL;
 static int ast_tree_counter = 0;
+static int current_scope_id = 1;
+static int current_function_scope_id = 1;
 
 /* Вспомогательные функции */
 static const char* get_operation_name_internal(ASTNodeType type, const char* value);
 static void export_ast_tree_to_dot(ASTNode* node, FILE* f, int tree_id, int* node_counter);
 static void ast_to_string(ASTNode* node, char* buf, int max_len);
 static int segment_ends_with_break(CFGNode* exit_node);
-static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt);
-static CFGSegment build_cfg_for_statements(CFG* cfg, ASTNode* stmt_list);
+static CFGSegment build_cfg_for_statements(CFG* cfg, ASTNode* stmt_list, int function_scope_id);
+static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt_list, int function_scope_id);
 static void mark_error_recursive(ASTNode* node, const char* error_msg);
 
 void cfg_set_symbol_table(SymbolTable* table) {
     current_symbol_table = table;
+    current_function_scope_id = 1;
+}
+
+void cfg_set_current_scope_id(int scope_id) {
+    current_scope_id = scope_id;
+}
+
+static void set_current_function_scope(const char* func_name) {
+    if (!current_symbol_table || !func_name) {
+        current_function_scope_id = 1; // Глобальная область по умолчанию
+        return;
+    }
+
+    // Ищем функцию в таблице символов
+    for (int i = 0; i < current_symbol_table->symbol_count; i++) {
+        Symbol* sym = &current_symbol_table->symbols[i];
+        if (sym->type == SYM_FUNCTION &&
+            sym->name && strcmp(sym->name, func_name) == 0) {
+            // Ищем область видимости этой функции
+            for (int j = 0; j < current_symbol_table->scope_count; j++) {
+                Scope* scope = current_symbol_table->scopes[j];
+                if (scope->type == SCOPE_FUNCTION &&
+                    scope->name && strcmp(scope->name, func_name) == 0) {
+                    current_function_scope_id = scope->id;
+                    printf("    [DEBUG] Function %s found in scope %d\n", func_name, current_function_scope_id);
+                    return;
+                }
+            }
+        }
+    }
+
+    current_function_scope_id = 1; // Не нашли - используем глобальную
+    printf("    [WARNING] Function %s not found in symbol table\n", func_name);
+}
+
+static void export_ast_tree_to_dot_nested(ASTNode* node, FILE* f, int tree_id,
+    int* node_counter, int indent) {
+    if (!node || !f) return;
+
+    int node_id = (*node_counter)++;
+    const char* op_name = get_operation_name_internal(node->type, node->value);
+    char node_label[1024] = "";
+    char indent_str[64] = "";
+
+    // Создаем строку отступа
+    for (int i = 0; i < indent && i < 60; i++) {
+        indent_str[i] = ' ';
+    }
+    indent_str[indent < 60 ? indent : 60] = '\0';
+
+    // Формируем метку узла (идентичная логике из export_ast_tree_to_dot)
+    if (node->type == AST_IDENTIFIER) {
+        if (node->value && node->value[0] != '\0') {
+            snprintf(node_label, sizeof(node_label), "Load(%s)", node->value);
+        }
+        else {
+            snprintf(node_label, sizeof(node_label), "Load(unknown)");
+        }
+    }
+    else if (node->type == AST_LITERAL) {
+        if (node->value && node->value[0] != '\0') {
+            snprintf(node_label, sizeof(node_label), "Const(%s)", node->value);
+        }
+        else {
+            snprintf(node_label, sizeof(node_label), "Const");
+        }
+    }
+    else if (node->type == AST_ASSIGNMENT) {
+        snprintf(node_label, sizeof(node_label), "Store");
+    }
+    else if (node->type == AST_BINARY_EXPR && node->value) {
+        const char* op_word = "BinOp";
+        if (strcmp(node->value, "+") == 0) op_word = "Add";
+        else if (strcmp(node->value, "-") == 0) op_word = "Sub";
+        else if (strcmp(node->value, "*") == 0) op_word = "Mul";
+        else if (strcmp(node->value, "/") == 0) op_word = "Div";
+        else if (strcmp(node->value, "%") == 0) op_word = "Mod";
+        else if (strcmp(node->value, "==") == 0) op_word = "Eq";
+        else if (strcmp(node->value, "!=") == 0) op_word = "NotEq";
+        else if (strcmp(node->value, "<") == 0) op_word = "Lt";
+        else if (strcmp(node->value, ">") == 0) op_word = "Gt";
+        else if (strcmp(node->value, "<=") == 0) op_word = "LtEq";
+        else if (strcmp(node->value, ">=") == 0) op_word = "GtEq";
+        else if (strcmp(node->value, "&") == 0) op_word = "And";
+        else if (strcmp(node->value, "|") == 0) op_word = "Or";
+        else if (strcmp(node->value, "^") == 0) op_word = "Xor";
+        snprintf(node_label, sizeof(node_label), "%s", op_word);
+    }
+    else if (node->type == AST_CALL_EXPR) {
+        if (node->value && node->value[0] != '\0') {
+            snprintf(node_label, sizeof(node_label), "FunctionCall(%s)", node->value);
+        }
+        else {
+            snprintf(node_label, sizeof(node_label), "FunctionCall");
+        }
+    }
+    else {
+        if (op_name && op_name[0] != '\0') {
+            snprintf(node_label, sizeof(node_label), "%s", op_name);
+        }
+        else {
+            snprintf(node_label, sizeof(node_label), "NodeType:%d", node->type);
+        }
+    }
+
+    // Выводим узел с отступом
+    if (node->has_error && node->error_message) {
+        char error_label[2048];
+        snprintf(error_label, sizeof(error_label), "%s\\n❌ %s", node_label, node->error_message);
+        fprintf(f, "%stree%d_node%d [label=\"%s\", shape=ellipse, "
+            "fillcolor=\"#FF6B6B\", fontcolor=white, style=filled, penwidth=2];\n",
+            indent_str, tree_id, node_id, error_label);
+    }
+    else if (node->type == AST_IDENTIFIER) {
+        fprintf(f, "%stree%d_node%d [label=\"%s\", shape=box, "
+            "fillcolor=\"#A8E6CF\", style=filled];\n",
+            indent_str, tree_id, node_id, node_label);
+    }
+    else if (node->type == AST_LITERAL) {
+        fprintf(f, "%stree%d_node%d [label=\"%s\", shape=box, "
+            "fillcolor=\"#FFD93D\", style=filled];\n",
+            indent_str, tree_id, node_id, node_label);
+    }
+    else {
+        fprintf(f, "%stree%d_node%d [label=\"%s\", shape=ellipse, "
+            "fillcolor=lightblue, style=filled];\n",
+            indent_str, tree_id, node_id, node_label);
+    }
+
+    // Рекурсивно экспортируем дочерние узлы
+    for (int i = 0; i < node->child_count; i++) {
+        int child_id = *node_counter;
+        fprintf(f, "%stree%d_node%d -> tree%d_node%d;\n",
+            indent_str, tree_id, node_id, tree_id, child_id);
+        export_ast_tree_to_dot_nested(node->children[i], f, tree_id, node_counter, indent + 2);
+    }
 }
 
 CFG* cfg_create(void) {
@@ -33,27 +171,67 @@ CFG* cfg_create(void) {
     return cfg;
 }
 
+void cfg_add_expr_tree(CFGNode* node, ASTNode* tree) {
+    if (!node || !tree) return;
+
+    // Переаллокируем массив с увеличенным размером
+    ASTNode** new_trees = (ASTNode**)realloc(node->expr_trees,
+        (node->expr_tree_count + 1) * sizeof(ASTNode*));
+    if (!new_trees) {
+        fprintf(stderr, "Error: Memory reallocation failed in cfg_add_expr_tree\n");
+        return;
+    }
+
+    node->expr_trees = new_trees;
+    node->expr_trees[node->expr_tree_count] = tree;
+    node->expr_tree_count++;
+
+    printf("  [+] Added expression tree %d to CFG node %d\n",
+        node->expr_tree_count - 1, node->id);
+}
+
 CFGNode* cfg_create_node(CFG* cfg, CFGNodeType type, const char* label,
     ASTNode* ast_node, ASTNode* op_tree) {
     if (!cfg) return NULL;
 
     CFGNode* node = (CFGNode*)malloc(sizeof(CFGNode));
+    if (!node) return NULL;
+
     node->id = cfg->next_id++;
     node->type = type;
     node->label = label ? (char*)malloc(strlen(label) + 1) : NULL;
     if (label) strcpy(node->label, label);
 
     node->ast_node = ast_node;
-    node->op_tree = op_tree;
+
+    // Инициализация массива деревьев выражений
+    node->expr_trees = NULL;
+    node->expr_tree_count = 0;
+
+    // Если передано одно дерево, добавляем его
+    if (op_tree) {
+        node->expr_trees = (ASTNode**)malloc(sizeof(ASTNode*));
+        if (node->expr_trees) {
+            node->expr_trees[0] = op_tree;
+            node->expr_tree_count = 1;
+        }
+    }
 
     node->defaultNext = NULL;
     node->conditionalNext = NULL;
-
+    node->function_name = NULL;
+    node->is_function_entry = 0;
+    node->is_function_exit = 0;
     node->has_error = 0;
     node->error_message = NULL;
     node->is_break = 0;
 
     cfg->nodes = (CFGNode**)realloc(cfg->nodes, (cfg->node_count + 1) * sizeof(CFGNode*));
+    if (!cfg->nodes) {
+        free(node);
+        return NULL;
+    }
+
     cfg->nodes[cfg->node_count++] = node;
 
     return node;
@@ -84,35 +262,146 @@ void cfg_add_conditional_edge(CFGNode* from, CFGNode* to) {
     }
 }
 
-static void ast_to_string(ASTNode* node, char* buf, int max_len) {
-    if (!node || !buf) return;
+static int get_operator_precedence(const char* op) {
+    if (!op) return 0;
 
-    if (!node->value) {
-        snprintf(buf, max_len, "%s", getNodeTypeName(node->type));
+    // Приоритеты операций (выше число = выше приоритет)
+    if (strcmp(op, "*") == 0 || strcmp(op, "/") == 0 || strcmp(op, "%") == 0) {
+        return 3;  // Умножение, деление, остаток
+    }
+    else if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0) {
+        return 2;  // Сложение, вычитание
+    }
+    else if (strcmp(op, "<") == 0 || strcmp(op, ">") == 0 ||
+        strcmp(op, "<=") == 0 || strcmp(op, ">=") == 0 ||
+        strcmp(op, "==") == 0 || strcmp(op, "!=") == 0) {
+        return 1;  // Сравнение
+    }
+    else if (strcmp(op, "&&") == 0 || strcmp(op, "||") == 0) {
+        return 0;  // Логические операции
+    }
+
+    return -1;  // Неизвестная операция
+}
+
+
+static void ast_to_string(ASTNode* node, char* buf, int max_len) {
+    if (!node || !buf) {
+        buf[0] = '\0';
         return;
     }
 
-    const char* type_name = getNodeTypeName(node->type);
-
-    if (node->type == AST_BINARY_EXPR) {
-        if (node->child_count >= 2) {
-            char left[256] = "", right[256] = "";
-            ast_to_string(node->children[0], left, sizeof(left));
-            ast_to_string(node->children[1], right, sizeof(right));
-            snprintf(buf, max_len, "(%s %s %s)", left, node->value, right);
-        }
-        else {
+    // Базовые типы
+    if (node->type == AST_IDENTIFIER) {
+        if (node->value && node->value[0] != '\0') {
             snprintf(buf, max_len, "%s", node->value);
         }
+        else {
+            snprintf(buf, max_len, "?");
+        }
+        return;
     }
-    else if (node->type == AST_CALL_EXPR) {
-        snprintf(buf, max_len, "%s(...)", node->value);
+
+    if (node->type == AST_LITERAL) {
+        if (node->value && node->value[0] != '\0') {
+            snprintf(buf, max_len, "%s", node->value);
+        }
+        else {
+            snprintf(buf, max_len, "const");
+        }
+        return;
     }
-    else if (node->type == AST_IDENTIFIER || node->type == AST_LITERAL) {
+
+    // Унарные операции
+    if (node->type == AST_UNARY_EXPR) {
+        if (node->child_count >= 1) {
+            char operand[512] = "";
+            ast_to_string(node->children[0], operand, sizeof(operand));
+            snprintf(buf, max_len, "%s%s", node->value ? node->value : "", operand);
+        }
+        else {
+            snprintf(buf, max_len, "%s", node->value ? node->value : "UnOp");
+        }
+        return;
+    }
+
+    if (node->type == AST_ASSIGNMENT) {
+        char left[512] = "", right[512] = "";
+        if (node->child_count >= 2) {
+            ast_to_string(node->children[0], left, sizeof(left));
+            ast_to_string(node->children[1], right, sizeof(right));
+            snprintf(buf, max_len, "%s := %s", left, right);
+        }
+        else {
+            snprintf(buf, max_len, ":=");
+        }
+        return;
+    }
+
+    // Бинарные операции
+    if (node->type == AST_BINARY_EXPR) {
+        if (node->child_count >= 2) {
+            char left[512] = "", right[512] = "";
+            ast_to_string(node->children[0], left, sizeof(left));
+            ast_to_string(node->children[1], right, sizeof(right));
+            snprintf(buf, max_len, "(%s %s %s)", left, node->value ? node->value : "op", right);
+        }
+        else {
+            snprintf(buf, max_len, "%s", node->value ? node->value : "BinOp");
+        }
+        return;
+    }
+
+    // Вызовы функций - ГЛАВНОЕ УЛУЧШЕНИЕ
+    if (node->type == AST_CALL_EXPR) {
+        char args_str[1024] = "";
+        int arg_count = 0;
+
+        // Ищем аргументы среди дочерних узлов
+        for (int i = 0; i < node->child_count; i++) {
+            ASTNode* child = node->children[i];
+
+            // Пропускаем сам узел функции (Load(function_name))
+            if (child->type == AST_IDENTIFIER &&
+                node->value && strcmp(child->value, node->value) == 0) {
+                continue;
+            }
+
+            // Найдем узел args или обрабатываем напрямую
+            if (child->value && strcmp(child->value, "args") == 0) {
+                // Это узел args - раскрываем его аргументы
+                for (int j = 0; j < child->child_count; j++) {
+                    char arg[512] = "";
+                    ast_to_string(child->children[j], arg, sizeof(arg));
+
+                    if (arg_count > 0) strcat(args_str, ", ");
+                    strcat(args_str, arg);
+                    arg_count++;
+                }
+            }
+            else if (child->type != AST_IDENTIFIER) {
+                // Это само выражение аргумента
+                char arg[512] = "";
+                ast_to_string(child, arg, sizeof(arg));
+
+                if (arg_count > 0) strcat(args_str, ", ");
+                strcat(args_str, arg);
+                arg_count++;
+            }
+        }
+
+        snprintf(buf, max_len, "%s(%s)",
+            node->value ? node->value : "func",
+            args_str[0] != '\0' ? args_str : "");
+        return;
+    }
+
+    // По умолчанию - имя типа или значение
+    if (node->value && node->value[0] != '\0') {
         snprintf(buf, max_len, "%s", node->value);
     }
     else {
-        snprintf(buf, max_len, "%s: %s", type_name, node->value);
+        snprintf(buf, max_len, "<%s>", getNodeTypeName(node->type));
     }
 }
 
@@ -121,7 +410,7 @@ static int segment_ends_with_break(CFGNode* exit_node) {
     return exit_node->is_break;
 }
 
-static CFGSegment build_cfg_for_statements(CFG* cfg, ASTNode* stmt_list) {
+static CFGSegment build_cfg_for_statements(CFG* cfg, ASTNode* stmt_list, int function_scope_id) {
     if (!cfg || !stmt_list) {
         CFGSegment empty = { NULL, NULL };
         return empty;
@@ -131,7 +420,7 @@ static CFGSegment build_cfg_for_statements(CFG* cfg, ASTNode* stmt_list) {
     CFGNode* last_node = NULL;
 
     for (int i = 0; i < stmt_list->child_count; i++) {
-        CFGSegment seg = build_cfg_for_statement(cfg, stmt_list->children[i]);
+        CFGSegment seg = build_cfg_for_statement(cfg, stmt_list->children[i], function_scope_id);
 
         if (!first_node) {
             first_node = seg.entry;
@@ -154,7 +443,7 @@ static CFGSegment build_cfg_for_statements(CFG* cfg, ASTNode* stmt_list) {
     return result;
 }
 
-static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt) {
+static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt, int function_scope_id) {
     CFGSegment result = { NULL, NULL };
 
     if (!cfg || !stmt) return result;
@@ -170,7 +459,7 @@ static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt) {
             CFGNode* node = cfg_create_node(cfg, CFG_BLOCK, label, stmt, expr);
 
             if (current_symbol_table) {
-                check_expression_semantics(expr, current_symbol_table, node);
+                check_expression_semantics(expr, current_symbol_table, node, function_scope_id);
 
                 if (node->has_error) {
                     node->type = CFG_ERROR;
@@ -198,7 +487,7 @@ static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt) {
         CFGNode* cond_node = cfg_create_node(cfg, CFG_CONDITION, label, stmt, cond);
 
         if (current_symbol_table) {
-            check_expression_semantics(cond, current_symbol_table, cond_node);
+            check_expression_semantics(cond, current_symbol_table, cond_node, function_scope_id);
 
             if (cond_node->has_error) {
                 cond_node->type = CFG_ERROR;
@@ -217,12 +506,12 @@ static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt) {
 
         CFGSegment then_seg = { NULL, NULL };
         if (stmt->child_count > 1) {
-            then_seg = build_cfg_for_statement(cfg, stmt->children[1]);
+            then_seg = build_cfg_for_statement(cfg, stmt->children[1], function_scope_id);
         }
 
         CFGSegment else_seg = { NULL, NULL };
         if (stmt->child_count > 2) {
-            else_seg = build_cfg_for_statement(cfg, stmt->children[2]);
+            else_seg = build_cfg_for_statement(cfg, stmt->children[2], function_scope_id);
         }
 
         if (then_seg.entry) {
@@ -264,7 +553,7 @@ static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt) {
         CFGNode* loopcond = cfg_create_node(cfg, CFG_CONDITION, label, stmt, cond);
 
         if (current_symbol_table) {
-            check_expression_semantics(cond, current_symbol_table, loopcond);
+            check_expression_semantics(cond, current_symbol_table, loopcond, function_scope_id);
 
             if (loopcond->has_error) {
                 loopcond->type = CFG_ERROR;
@@ -288,7 +577,7 @@ static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt) {
 
         CFGSegment bodyseg = { NULL, NULL };
         if (stmt->child_count > 1) {
-            bodyseg = build_cfg_for_statement(cfg, stmt->children[1]);
+            bodyseg = build_cfg_for_statement(cfg, stmt->children[1], function_scope_id);
         }
 
         if (bodyseg.entry) {
@@ -321,7 +610,7 @@ static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt) {
 
         CFGSegment body_seg = { NULL, NULL };
         if (stmt->child_count > 0) {
-            body_seg = build_cfg_for_statement(cfg, stmt->children[0]);
+            body_seg = build_cfg_for_statement(cfg, stmt->children[0], function_scope_id);
             if (body_seg.entry) {
                 cfg_add_default_edge(repeat_entry, body_seg.entry);
             }
@@ -334,7 +623,7 @@ static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt) {
             until_node = cfg_create_node(cfg, CFG_CONDITION, label, stmt, until_cond);
 
             if (current_symbol_table) {
-                check_expression_semantics(until_cond, current_symbol_table, until_node);
+                check_expression_semantics(until_cond, current_symbol_table, until_node, function_scope_id);
 
                 if (until_node->has_error) {
                     until_node->type = CFG_ERROR;
@@ -387,7 +676,7 @@ static CFGSegment build_cfg_for_statement(CFG* cfg, ASTNode* stmt) {
 
     case AST_STATEMENT_BLOCK:
     case AST_STATEMENT_LIST: {
-        result = build_cfg_for_statements(cfg, stmt);
+        result = build_cfg_for_statements(cfg, stmt, function_scope_id);
         break;
     }
 
@@ -411,7 +700,6 @@ void cfg_build_from_ast(CFG* cfg, ASTNode* ast) {
 
     for (int i = 0; i < ast->child_count; i++) {
         ASTNode* func_def = ast->children[i];
-
         if (func_def->type != AST_FUNCTION_DEF) continue;
 
         char func_name[256] = "unknown";
@@ -421,8 +709,36 @@ void cfg_build_from_ast(CFG* cfg, ASTNode* ast) {
             }
         }
 
+        // Получаем scope_id для этой функции
+        int func_scope_id = 1; // По умолчанию глобальная
+        if (!current_symbol_table || !func_name) {
+            func_scope_id = 1;
+        }
+        else {
+            // Ищем функцию в таблице символов
+            for (int j = 0; j < current_symbol_table->symbol_count; j++) {
+                Symbol* sym = &current_symbol_table->symbols[j];
+                if (sym->type == SYM_FUNCTION && sym->name &&
+                    strcmp(sym->name, func_name) == 0) {
+                    // Ищем область видимости этой функции
+                    for (int k = 0; k < current_symbol_table->scope_count; k++) {
+                        Scope* scope = current_symbol_table->scopes[k];
+                        if (scope->type == SCOPE_FUNCTION && scope->name &&
+                            strcmp(scope->name, func_name) == 0) {
+                            func_scope_id = scope->id;
+                            printf("    [DEBUG] Function %s found in scope %d\n",
+                                func_name, func_scope_id);
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
         char entry_label[512];
-        snprintf(entry_label, sizeof(entry_label), "entry: %s", func_name);
+        snprintf(entry_label, sizeof(entry_label), "entry: %s (scope:%d)",
+            func_name, func_scope_id);
         CFGNode* entry = cfg_create_node(cfg, CFG_START, entry_label, NULL, NULL);
         cfg->entry = entry;
 
@@ -430,7 +746,8 @@ void cfg_build_from_ast(CFG* cfg, ASTNode* ast) {
 
         CFGSegment body_seg = { NULL, NULL };
         if (func_def->child_count > 1) {
-            body_seg = build_cfg_for_statement(cfg, func_def->children[1]);
+            // Используем функцию с явным scope_id
+            body_seg = build_cfg_for_statement(cfg, func_def->children[1], func_scope_id);
 
             if (body_seg.entry) {
                 cfg_add_default_edge(entry, body_seg.entry);
@@ -500,6 +817,9 @@ static void export_ast_tree_to_dot(ASTNode* node, FILE* f, int tree_id, int* nod
             snprintf(node_label, sizeof(node_label), "Load(unknown)");
         }
     }
+    else if (node->type == AST_ASSIGNMENT) {
+        snprintf(node_label, sizeof(node_label), "Assign");
+    }
     else if (node->type == AST_LITERAL) {
         if (node->value && node->value[0] != '\0') {
             snprintf(node_label, sizeof(node_label), "Const(%s)", node->value);
@@ -532,9 +852,9 @@ static void export_ast_tree_to_dot(ASTNode* node, FILE* f, int tree_id, int* nod
             snprintf(node_label, sizeof(node_label), "FunctionCall");
         }
     }
-    else if (node->type == AST_ASSIGNMENT) {
+    /*else if (node->type == AST_ASSIGNMENT) {
         snprintf(node_label, sizeof(node_label), "Store");
-    }
+    }*/
     else if (node->type == AST_BINARY_EXPR && node->value) {
         const char* op_word = "BinOp";
 
@@ -672,106 +992,169 @@ void cfg_export_dot(CFG* cfg, const char* filename) {
     fprintf(f, "  node [fontname=\"Courier\", fontsize=10];\n");
     fprintf(f, "  edge [fontname=\"Courier\", fontsize=9];\n\n");
 
+    // ============ ПЕРВЫЙ ПРОХОД: Создаем узлы CFG с вложенными деревьями ============
+
     for (int i = 0; i < cfg->node_count; i++) {
-        CFGNode* node = cfg->nodes[i];
+        CFGNode* cfg_node = cfg->nodes[i];
 
         char final_label[2048];
-        if (node->has_error && node->error_message) {
+        if (cfg_node->has_error && cfg_node->error_message) {
             char escaped_error[1024];
-            escape_string_for_dot(node->error_message, escaped_error, sizeof(escaped_error));
+            escape_string_for_dot(cfg_node->error_message, escaped_error, sizeof(escaped_error));
 
-            if (node->label) {
+            if (cfg_node->label) {
                 snprintf(final_label, sizeof(final_label),
-                    "%s\\n❌ %s", node->label, escaped_error);
+                    "%s\\n❌ %s", cfg_node->label, escaped_error);
             }
             else {
                 snprintf(final_label, sizeof(final_label),
                     "❌ ERROR\\n%s", escaped_error);
             }
         }
-        else if (node->label) {
-            strncpy(final_label, node->label, sizeof(final_label));
+        else if (cfg_node->label) {
+            strncpy(final_label, cfg_node->label, sizeof(final_label) - 1);
+            final_label[sizeof(final_label) - 1] = '\0';
         }
         else {
-            snprintf(final_label, sizeof(final_label), "Node %d", node->id);
+            snprintf(final_label, sizeof(final_label), "Node %d", cfg_node->id);
         }
 
-        if (node->has_error) {
-            fprintf(f, "  node%d [label=\"%s\", "
-                "shape=box, fillcolor=\"#FF6B6B\", "
-                "fontcolor=white, style=filled, penwidth=2, "
-                "fontname=\"Courier-Bold\"];\n",
-                node->id, final_label);
-        }
-        else if (node->type == CFG_CONDITION) {
-            fprintf(f, "  node%d [label=\"%s\", "
-                "shape=diamond, fillcolor=\"#FFD93D\", style=filled];\n",
-                node->id, final_label);
-        }
-        else if (node->type == CFG_MERGE) {
-            fprintf(f, "  node%d [label=\"%s\", "
-                "shape=box, fillcolor=\"#95E1D3\", style=filled];\n",
-                node->id, final_label);
-        }
-        else if (node->type == CFG_START) {
-            fprintf(f, "  node%d [label=\"%s\", "
-                "shape=circle, fillcolor=\"#6BCF7F\", style=filled];\n",
-                node->id, final_label);
-        }
-        else if (node->type == CFG_END) {
-            fprintf(f, "  node%d [label=\"%s\", "
-                "shape=circle, fillcolor=\"#FF9A76\", style=filled];\n",
-                node->id, final_label);
+        // НОВОЕ: Если у узла есть деревья выражений, создаем вложенный контейнер
+        if (cfg_node->expr_tree_count > 0) {
+            fprintf(f, "  subgraph cluster_node_%d {\n", cfg_node->id);
+            fprintf(f, "    style=filled;\n");
+            fprintf(f, "    color=\"#F0F0F0\";\n");
+            fprintf(f, "    margin=10;\n");
+            fprintf(f, "    bgcolor=\"#F9F9F9\";\n");
+            fprintf(f, "    label=\"\";\n\n");
+
+            // Основной узел CFG внутри контейнера
+            if (cfg_node->has_error) {
+                fprintf(f, "    node%d [label=\"%s\", "
+                    "shape=box, fillcolor=\"#FF6B6B\", "
+                    "fontcolor=white, style=filled, penwidth=2, "
+                    "fontname=\"Courier-Bold\"];\n",
+                    cfg_node->id, final_label);
+            }
+            else if (cfg_node->type == CFG_CONDITION) {
+                fprintf(f, "    node%d [label=\"%s\", "
+                    "shape=diamond, fillcolor=\"#FFD93D\", style=filled];\n",
+                    cfg_node->id, final_label);
+            }
+            else if (cfg_node->type == CFG_MERGE) {
+                fprintf(f, "    node%d [label=\"%s\", "
+                    "shape=box, fillcolor=\"#95E1D3\", style=filled];\n",
+                    cfg_node->id, final_label);
+            }
+            else if (cfg_node->type == CFG_START) {
+                fprintf(f, "    node%d [label=\"%s\", "
+                    "shape=circle, fillcolor=\"#6BCF7F\", style=filled];\n",
+                    cfg_node->id, final_label);
+            }
+            else if (cfg_node->type == CFG_END) {
+                fprintf(f, "    node%d [label=\"%s\", "
+                    "shape=circle, fillcolor=\"#FF9A76\", style=filled];\n",
+                    cfg_node->id, final_label);
+            }
+            else {
+                fprintf(f, "    node%d [label=\"%s\", "
+                    "shape=box, fillcolor=\"lightblue\", style=filled];\n",
+                    cfg_node->id, final_label);
+            }
+
+            fprintf(f, "\n");
+
+            // Вложенные деревья выражений
+            for (int j = 0; j < cfg_node->expr_tree_count; j++) {
+                fprintf(f, "    // -------- Expression Tree %d --------\n", j);
+
+                int node_counter = 0;
+                int tree_unique_id = cfg_node->id * 1000 + j;
+
+                // Экспортируем дерево внутри контейнера с увеличенным отступом
+                export_ast_tree_to_dot_nested(cfg_node->expr_trees[j], f,
+                    tree_unique_id, &node_counter, 4);
+                fprintf(f, "\n");
+
+                // Связь от CFG узла к первому узлу дерева (если дерево не пусто)
+                if (node_counter > 0) {
+                    fprintf(f, "    node%d -> tree%d_node0 [style=dotted, label=\"expr_%d\"];\n\n",
+                        cfg_node->id, tree_unique_id, j);
+                }
+            }
+
+            fprintf(f, "  }\n\n");
         }
         else {
-            fprintf(f, "  node%d [label=\"%s\", "
-                "shape=box, fillcolor=\"lightblue\", style=filled];\n",
-                node->id, final_label);
+            // Узел без деревьев выражений - обычный вывод
+            if (cfg_node->has_error) {
+                fprintf(f, "  node%d [label=\"%s\", "
+                    "shape=box, fillcolor=\"#FF6B6B\", "
+                    "fontcolor=white, style=filled, penwidth=2, "
+                    "fontname=\"Courier-Bold\"];\n",
+                    cfg_node->id, final_label);
+            }
+            else if (cfg_node->type == CFG_CONDITION) {
+                fprintf(f, "  node%d [label=\"%s\", "
+                    "shape=diamond, fillcolor=\"#FFD93D\", style=filled];\n",
+                    cfg_node->id, final_label);
+            }
+            else if (cfg_node->type == CFG_MERGE) {
+                fprintf(f, "  node%d [label=\"%s\", "
+                    "shape=box, fillcolor=\"#95E1D3\", style=filled];\n",
+                    cfg_node->id, final_label);
+            }
+            else if (cfg_node->type == CFG_START) {
+                fprintf(f, "  node%d [label=\"%s\", "
+                    "shape=circle, fillcolor=\"#6BCF7F\", style=filled];\n",
+                    cfg_node->id, final_label);
+            }
+            else if (cfg_node->type == CFG_END) {
+                fprintf(f, "  node%d [label=\"%s\", "
+                    "shape=circle, fillcolor=\"#FF9A76\", style=filled];\n",
+                    cfg_node->id, final_label);
+            }
+            else {
+                fprintf(f, "  node%d [label=\"%s\", "
+                    "shape=box, fillcolor=\"lightblue\", style=filled];\n",
+                    cfg_node->id, final_label);
+            }
         }
     }
 
     fprintf(f, "\n");
+    fprintf(f, "  // ============ CFG EDGES ============\n\n");
+
+    // ============ ВТОРОЙ ПРОХОД: Ребра между узлами CFG ============
 
     for (int i = 0; i < cfg->node_count; i++) {
         CFGNode* node = cfg->nodes[i];
 
-        if (node->defaultNext) {
-            fprintf(f, "  node%d -> node%d [label=\"false\"];\n",
-                node->id, node->defaultNext->id);
-        }
-
+        // Если есть условное ребро, значит это условный узел (if/while/for)
         if (node->conditionalNext) {
+            // У условного узла ЕСТЬ два ребра - true и false
             fprintf(f, "  node%d -> node%d [label=\"true\", style=dashed];\n",
                 node->id, node->conditionalNext->id);
+
+            if (node->defaultNext) {
+                fprintf(f, "  node%d -> node%d [label=\"false\"];\n",
+                    node->id, node->defaultNext->id);
+            }
         }
-    }
-
-    fprintf(f, "\n");
-    fprintf(f, "  // ============ EXPRESSION TREES ============\n\n");
-
-    ast_tree_counter = 0;
-
-    for (int i = 0; i < cfg->node_count; i++) {
-        CFGNode* cfg_node = cfg->nodes[i];
-
-        if (!cfg_node->op_tree) continue;
-
-        fprintf(f, "  subgraph cluster_expr_%d {\n", ast_tree_counter);
-        fprintf(f, "    style=filled;\n");
-        fprintf(f, "    color=lightgrey;\n");
-        fprintf(f, "    label=\"Expression Tree %d\";\n", ast_tree_counter);
-
-        int node_counter = 0;
-        export_ast_tree_to_dot(cfg_node->op_tree, f, ast_tree_counter, &node_counter);
-
-        fprintf(f, "  }\n\n");
-
-        ast_tree_counter++;
+        else if (node->defaultNext) {
+            // Если нет условного ребра, это просто последовательный переход
+            // БЕЗ метки (или с пустой меткой)
+            fprintf(f, "  node%d -> node%d;\n",
+                node->id, node->defaultNext->id);
+        }
     }
 
     fprintf(f, "}\n");
     fclose(f);
+
+    printf("[+] CFG exported to %s with nested expression trees\n", filename);
 }
+
 
 static void mark_error_recursive(ASTNode* node, const char* error_msg) {
     if (!node) return;
@@ -783,16 +1166,39 @@ static void mark_error_recursive(ASTNode* node, const char* error_msg) {
     }
 }
 
-void check_expression_semantics(ASTNode* expr, SymbolTable* symbol_table, CFGNode* cfg_node) {
+
+void check_expression_semantics(ASTNode* expr, SymbolTable* symbol_table, CFGNode* cfg_node, int function_scope_id) {
     if (!expr || !symbol_table) return;
 
     switch (expr->type) {
     case AST_IDENTIFIER: {
-        Symbol* sym = symbol_table_lookup(symbol_table, expr->value);
+        Symbol* sym = NULL;
+
+        // Сначала ищем в указанной области функции
+        for (int i = 0; i < symbol_table->symbol_count; i++) {
+            if (strcmp(symbol_table->symbols[i].name, expr->value) == 0 &&
+                symbol_table->symbols[i].scope_id == function_scope_id) {
+                sym = &symbol_table->symbols[i];
+                break;
+            }
+        }
+
+        // Если не нашли, ищем в глобальной области
+        if (!sym) {
+            for (int i = 0; i < symbol_table->symbol_count; i++) {
+                if (strcmp(symbol_table->symbols[i].name, expr->value) == 0 &&
+                    symbol_table->symbols[i].scope->type == SCOPE_GLOBAL) {
+                    sym = &symbol_table->symbols[i];
+                    break;
+                }
+            }
+        }
+
         if (!sym) {
             char error_msg[512];
             snprintf(error_msg, sizeof(error_msg),
-                "Undeclared variable '%s'", expr->value);
+                "Undeclared variable '%s' (function scope: %d)",
+                expr->value, function_scope_id);
 
             cfg_node->has_error = 1;
             cfg_node->error_message = (char*)malloc(strlen(error_msg) + 1);
@@ -804,7 +1210,38 @@ void check_expression_semantics(ASTNode* expr, SymbolTable* symbol_table, CFGNod
                 strcpy(expr->error_message, error_msg);
             }
 
-            printf("    [ERROR] Undeclared variable '%s'\n", expr->value);
+            printf("    [ERROR] Undeclared variable '%s' (scope: %d)\n",
+                expr->value, function_scope_id);
+        }
+        break;
+    }
+
+    case AST_ASSIGNMENT: {  // ДОБАВЛЯЕМ ЭТОТ CASE
+        int has_child_error = 0;
+
+        // Проверяем левую часть (идентификатор)
+        if (expr->child_count >= 1) {
+            check_expression_semantics(expr->children[0], symbol_table, cfg_node, function_scope_id);
+            if (expr->children[0] && expr->children[0]->has_error) {
+                has_child_error = 1;
+            }
+        }
+
+        // Проверяем правую часть (значение)
+        if (expr->child_count >= 2) {
+            check_expression_semantics(expr->children[1], symbol_table, cfg_node, function_scope_id);
+            if (expr->children[1] && expr->children[1]->has_error) {
+                has_child_error = 1;
+            }
+        }
+
+        if (has_child_error) {
+            mark_error_recursive(expr, "Assignment has error in child expression");
+            cfg_node->has_error = 1;
+            if (!cfg_node->error_message) {
+                cfg_node->error_message = (char*)malloc(256);
+                strcpy(cfg_node->error_message, "Assignment has error in child expression");
+            }
         }
         break;
     }
@@ -812,8 +1249,8 @@ void check_expression_semantics(ASTNode* expr, SymbolTable* symbol_table, CFGNod
     case AST_BINARY_EXPR: {
         int has_child_error = 0;
         if (expr->child_count >= 2) {
-            check_expression_semantics(expr->children[0], symbol_table, cfg_node);
-            check_expression_semantics(expr->children[1], symbol_table, cfg_node);
+            check_expression_semantics(expr->children[0], symbol_table, cfg_node, function_scope_id);
+            check_expression_semantics(expr->children[1], symbol_table, cfg_node, function_scope_id);
 
             if ((expr->children[0] && expr->children[0]->has_error) ||
                 (expr->children[1] && expr->children[1]->has_error)) {
@@ -834,7 +1271,7 @@ void check_expression_semantics(ASTNode* expr, SymbolTable* symbol_table, CFGNod
 
     case AST_UNARY_EXPR: {
         if (expr->child_count > 0) {
-            check_expression_semantics(expr->children[0], symbol_table, cfg_node);
+            check_expression_semantics(expr->children[0], symbol_table, cfg_node, function_scope_id);
 
             if (expr->children[0] && expr->children[0]->has_error) {
                 mark_error_recursive(expr, "Child expression has error");
@@ -870,7 +1307,7 @@ void check_expression_semantics(ASTNode* expr, SymbolTable* symbol_table, CFGNod
 
         int has_child_error = 0;
         for (int i = 0; i < expr->child_count; i++) {
-            check_expression_semantics(expr->children[i], symbol_table, cfg_node);
+            check_expression_semantics(expr->children[i], symbol_table, cfg_node, function_scope_id);
             if (expr->children[i] && expr->children[i]->has_error) {
                 has_child_error = 1;
             }
@@ -890,13 +1327,13 @@ void check_expression_semantics(ASTNode* expr, SymbolTable* symbol_table, CFGNod
     case AST_INDEX_EXPR: {
         int has_child_error = 0;
         if (expr->child_count > 0) {
-            check_expression_semantics(expr->children[0], symbol_table, cfg_node);
+            check_expression_semantics(expr->children[0], symbol_table, cfg_node, function_scope_id);
             if (expr->children[0] && expr->children[0]->has_error) {
                 has_child_error = 1;
             }
         }
         if (expr->child_count > 1) {
-            check_expression_semantics(expr->children[1], symbol_table, cfg_node);
+            check_expression_semantics(expr->children[1], symbol_table, cfg_node, function_scope_id);
             if (expr->children[1] && expr->children[1]->has_error) {
                 has_child_error = 1;
             }
@@ -921,14 +1358,9 @@ void check_expression_semantics(ASTNode* expr, SymbolTable* symbol_table, CFGNod
 void cfg_check_semantics(CFG* cfg, SymbolTable* symbol_table) {
     if (!cfg || !symbol_table) return;
 
-    for (int i = 0; i < cfg->node_count; i++) {
-        CFGNode* node = cfg->nodes[i];
-
-        if (!node->op_tree) continue;
-
-        printf("    [CFG Node %d] Checking expression...\n", node->id);
-        check_expression_semantics(node->op_tree, symbol_table, node);
-    }
+    // Эта функция теперь не используется, так как семантическая проверка
+    // выполняется во время построения CFG
+    printf("    [INFO] Semantic checking is done during CFG construction\n");
 }
 
 void cfg_free(CFG* cfg) {
@@ -938,6 +1370,14 @@ void cfg_free(CFG* cfg) {
         CFGNode* node = cfg->nodes[i];
         if (node->label) free(node->label);
         if (node->error_message) free(node->error_message);
+        if (node->function_name) free(node->function_name);
+
+        // Освобождаем массив деревьев (сами деревья в другом месте)
+        if (node->expr_trees) {
+            free(node->expr_trees);
+            node->expr_trees = NULL;
+        }
+
         free(node);
     }
 

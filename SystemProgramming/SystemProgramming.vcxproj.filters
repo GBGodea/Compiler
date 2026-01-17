@@ -6,39 +6,31 @@
     <Object Include="parser.tab.o" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ast.c" />
     <ClCompile Include="lex.yy.c" />
     <ClCompile Include="makefile" />
     <ClCompile Include="parser.tab.c" />
-    <ClCompile Include="cfg_builder.c">
-      <Filter>Graph</Filter>
-    </ClCompile>
     <ClCompile Include="main.c" />
-    <ClCompile Include="semantic.c">
-      <Filter>semantic</Filter>
-    </ClCompile>
     <ClCompile Include="callgraph.c" />
     <ClCompile Include="project.c" />
     <ClCompile Include="calltree.c" />
-    <ClCompile Include="codegen_cfg.c">
+    <ClCompile Include="codegen.c">
       <Filter>codegen</Filter>
     </ClCompile>
+    <ClCompile Include="semantic.c" />
+    <ClCompile Include="cfg_builder.c" />
+    <ClCompile Include="ast.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ast.h" />
     <ClInclude Include="parser.tab.h" />
-    <ClInclude Include="cfg.h">
-      <Filter>Graph</Filter>
-    </ClInclude>
-    <ClInclude Include="semantic.h">
-      <Filter>semantic</Filter>
-    </ClInclude>
     <ClInclude Include="callgraph.h" />
     <ClInclude Include="project.h" />
     <ClInclude Include="calltree.h" />
-    <ClInclude Include="codegen_cfg.h">
+    <ClInclude Include="codegen.h">
       <Filter>codegen</Filter>
     </ClInclude>
+    <ClInclude Include="semantic.h" />
+    <ClInclude Include="cfg.h" />
+    <ClInclude Include="ast.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="lexer.l" />
