@@ -702,6 +702,18 @@ void cfg_build_from_ast(CFG* cfg, ASTNode* ast) {
         ASTNode* func_def = ast->children[i];
         if (func_def->type != AST_FUNCTION_DEF) continue;
 
+        /*
+         * External/prototype declarations have no body.
+         * The parser emits them as:
+         *   AST_FUNCTION_DEF (value = "declaration") with only the signature child.
+         * We MUST skip CFG generation for such items, otherwise codegen will emit
+         * an empty stub (_func_<name>) and you'll get duplicate symbols when you
+         * provide a real implementation in input.asm/output.asm.
+         */
+        if ((func_def->value && strcmp(func_def->value, "declaration") == 0) || func_def->child_count < 2) {
+            continue;
+        }
+
         char func_name[256] = "unknown";
         if (func_def->child_count > 0 && func_def->children[0]->type == AST_FUNCTION_SIGNATURE) {
             if (func_def->children[0]->value) {

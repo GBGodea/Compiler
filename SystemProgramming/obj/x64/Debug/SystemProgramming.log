@@ -2,50 +2,62 @@
   Удаленное копирование исходных файлов в "localhost"
   Команда сборки не настроена, действие пропущено.
   Вызов "make", рабочий каталог: "/home/user/projects/SystemProgramming/"
-  [*] Compiling semantic analyzer...
-  gcc -Wall -g -Wextra -c semantic.c -o semantic.o
+  [*] Compiling CFG builder...
+  gcc -Wall -g -Wextra -c cfg_builder.c -o cfg_builder.o
   
-  semantic.c: In function ‘symbol_table_add_parameter’:
-  semantic.c:247:9: warning: unused parameter ‘param_index’ [-Wunused-parameter]
-    247 |     int param_index) {
-        |     ~~~~^~~~~~~~~~~
-  semantic.c: At top level:
-  semantic.c:25:15: warning: ‘create_function_scope’ declared ‘static’ but never defined [-Wunused-function]
-     25 | static Scope* create_function_scope(SymbolTable* st, const char* func_name);
-        |               ^~~~~~~~~~~~~~~~~~~~~
-  semantic.c:562:20: warning: ‘get_return_type_from_signature’ defined but not used [-Wunused-function]
-    562 | static const char* get_return_type_from_signature(ASTNode* sig) {
-        |                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  cfg_builder.c: In function ‘build_cfg_for_statement’:
+  cfg_builder.c:462:17: warning: implicit declaration of function ‘check_expression_semantics’ [-Wimplicit-function-declaration]
+    462 |                 check_expression_semantics(expr, current_symbol_table, node, function_scope_id);
+        |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~
+  cfg_builder.c: In function ‘cfg_build_from_ast’:
+  cfg_builder.c:726:38: warning: the address of ‘func_name’ will always evaluate as ‘true’ [-Waddress]
+    726 |         if (!current_symbol_table || !func_name) {
+        |                                      ^
+  cfg_builder.c: At top level:
+  cfg_builder.c:1182:6: warning: conflicting types for ‘check_expression_semantics’; have ‘void(ASTNode *, SymbolTable *, CFGNode *, int)’
+   1182 | void check_expression_semantics(ASTNode* expr, SymbolTable* symbol_table, CFGNode* cfg_node, int function_scope_id) {
+        |      ^~~~~~~~~~~~~~~~~~~~~~~~~~
+  cfg_builder.c:462:17: note: previous implicit declaration of ‘check_expression_semantics’ with type ‘void(ASTNode *, SymbolTable *, CFGNode *, int)’
+    462 |                 check_expression_semantics(expr, current_symbol_table, node, function_scope_id);
+        |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~
   
-  [*] Compiling code generator...
-  gcc -Wall -g -Wextra -c codegen.c -o codegen.o
-  
-  codegen.c:523:13: warning: ‘parse_int_literal’ defined but not used [-Wunused-function]
-    523 | static long parse_int_literal(const char* s, int* ok) {
-        |             ^~~~~~~~~~~~~~~~~
-  codegen.c:501:13: warning: ‘emit_store_symbol’ defined but not used [-Wunused-function]
-    501 | static void emit_store_symbol(CG* cg, const Symbol* sym, int r_value) {
-        |             ^~~~~~~~~~~~~~~~~
-  codegen.c:250:12: warning: ‘scope_is_descendant_of’ defined but not used [-Wunused-function]
-    250 | static int scope_is_descendant_of(Scope* candidate, Scope* ancestor) {
-        |            ^~~~~~~~~~~~~~~~~~~~~~
-  codegen.c: In function ‘cg_node_label’:
-  codegen.c:377:40: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 253 [-Wformat-truncation=]
-    377 |         snprintf(buf, sizeof(buf), "_L_%s_%d", cg->func_name, id);
-        |                                        ^~
-  codegen.c:377:36: note: directive argument in the range [0, 2147483647]
-    377 |         snprintf(buf, sizeof(buf), "_L_%s_%d", cg->func_name, id);
-        |                                    ^~~~~~~~~~
-  codegen.c:377:9: note: ‘snprintf’ output between 6 and 270 bytes into a destination of size 256
-    377 |         snprintf(buf, sizeof(buf), "_L_%s_%d", cg->func_name, id);
-        |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  codegen.c: In function ‘cg_new_label’:
-  codegen.c:387:36: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 253 [-Wformat-truncation=]
-    387 |     snprintf(buf, sizeof(buf), "_T_%s_%s_%d", cg->func_name, prefix ? prefix : "L", id);
-        |                                    ^~
-  codegen.c:387:5: note: ‘snprintf’ output 8 or more bytes (assuming 263) into a destination of size 256
-    387 |     snprintf(buf, sizeof(buf), "_T_%s_%s_%d", cg->func_name, prefix ? prefix : "L", id);
-        |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  cfg_builder.c:816:13: warning: ‘export_ast_tree_to_dot’ defined but not used [-Wunused-function]
+    816 | static void export_ast_tree_to_dot(ASTNode* node, FILE* f, int tree_id, int* node_counter) {
+        |             ^~~~~~~~~~~~~~~~~~~~~~
+  cfg_builder.c:265:12: warning: ‘get_operator_precedence’ defined but not used [-Wunused-function]
+    265 | static int get_operator_precedence(const char* op) {
+        |            ^~~~~~~~~~~~~~~~~~~~~~~
+  cfg_builder.c:32:13: warning: ‘set_current_function_scope’ defined but not used [-Wunused-function]
+     32 | static void set_current_function_scope(const char* func_name) {
+        |             ^~~~~~~~~~~~~~~~~~~~~~~~~~
+  cfg_builder.c:10:12: warning: ‘ast_tree_counter’ defined but not used [-Wunused-variable]
+     10 | static int ast_tree_counter = 0;
+        |            ^~~~~~~~~~~~~~~~
+  cfg_builder.c: In function ‘build_cfg_for_statement’:
+  cfg_builder.c:468:68: warning: ‘%s’ directive output may be truncated writing up to 1023 bytes into a region of size 1020 [-Wformat-truncation=]
+    468 |                     snprintf(error_label, sizeof(error_label), "❌ %s\n%s", label, node->error_message);
+        |                                                                    ^~       ~~~~~
+  cfg_builder.c:468:21: note: ‘snprintf’ output 6 or more bytes (assuming 1029) into a destination of size 1024
+    468 |                     snprintf(error_label, sizeof(error_label), "❌ %s\n%s", label, node->error_message);
+        |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  cfg_builder.c:632:74: warning: ‘%s’ directive output may be truncated writing up to 1023 bytes into a region of size 1014 [-Wformat-truncation=]
+    632 |                     snprintf(error_label, sizeof(error_label), "❌ UNTIL %s\n%s", label, until_node->error_message);
+        |                                                                          ^~       ~~~~~
+  cfg_builder.c:632:21: note: ‘snprintf’ output 12 or more bytes (assuming 1035) into a destination of size 1024
+    632 |                     snprintf(error_label, sizeof(error_label), "❌ UNTIL %s\n%s", label, until_node->error_message);
+        |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  cfg_builder.c:562:70: warning: ‘%s’ directive output may be truncated writing up to 1023 bytes into a region of size 1014 [-Wformat-truncation=]
+    562 |                 snprintf(error_label, sizeof(error_label), "❌ WHILE %s\n%s", label, loopcond->error_message);
+        |                                                                      ^~       ~~~~~
+  cfg_builder.c:562:17: note: ‘snprintf’ output 12 or more bytes (assuming 1035) into a destination of size 1024
+    562 |                 snprintf(error_label, sizeof(error_label), "❌ WHILE %s\n%s", label, loopcond->error_message);
+        |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  cfg_builder.c:496:67: warning: ‘%s’ directive output may be truncated writing up to 1023 bytes into a region of size 1017 [-Wformat-truncation=]
+    496 |                 snprintf(error_label, sizeof(error_label), "❌ IF %s\n%s", label, cond_node->error_message);
+        |                                                                   ^~       ~~~~~
+  cfg_builder.c:496:17: note: ‘snprintf’ output 9 or more bytes (assuming 1032) into a destination of size 1024
+    496 |                 snprintf(error_label, sizeof(error_label), "❌ IF %s\n%s", label, cond_node->error_message);
+        |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   
   [*] Linking...
   gcc -Wall -g -Wextra -o cfg_builder parser.tab.o lex.yy.o ast.o cfg_builder.o semantic.o calltree.o codegen.o main.o -lfl

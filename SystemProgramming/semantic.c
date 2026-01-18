@@ -26,6 +26,113 @@ static Scope* create_function_scope(SymbolTable* st, const char* func_name);
 static void calculate_offsets(SymbolTable* st);
 static void check_unused_symbols(SymbolTable* st);
 
+
+/* =========================
+ * Parameter list helpers
+ *
+ * The parser currently builds function parameter lists by taking the first
+ * AST_ARG_DEF and appending the rest as children (via addChild). That means
+ * a signature like "fact(n: int, t: int)" becomes:
+ *   ArgDef(n)
+ *     TypeRef(int)
+ *     ArgDef(t)
+ *       TypeRef(int)
+ *
+ * Some passes expected a flat list and only registered the first parameter.
+ * These helpers normalize both representations:
+ *   - NULL            -> no params
+ *   - AST_STATEMENT_LIST -> children are params
+ *   - AST_ARG_DEF chain  -> this arg + any nested AST_ARG_DEF children
+ * ========================= */
+
+typedef struct {
+    SymbolTable* st;
+    int add_to_scope; /* 1 = also add as SYM_PARAMETER */
+    int next_index;   /* 1-based parameter index */
+
+    /* For function symbol signature (types) */
+    char** types;
+    int count;
+    int cap;
+} ParamCtx;
+
+static const char* argdef_get_type(ASTNode* arg) {
+    if (!arg) return "int";
+    for (int i = 0; i < arg->child_count; i++) {
+        ASTNode* c = arg->children[i];
+        if (c && c->type == AST_TYPE_REF && c->value) {
+            return c->value;
+        }
+    }
+    return "int";
+}
+
+static void paramctx_push_type(ParamCtx* ctx, const char* t) {
+    if (!ctx) return;
+    if (ctx->cap <= ctx->count) {
+        int new_cap = (ctx->cap == 0) ? 4 : ctx->cap * 2;
+        ctx->types = (char**)realloc(ctx->types, new_cap * sizeof(char*));
+        ctx->cap = new_cap;
+    }
+    ctx->types[ctx->count++] = strdup(t ? t : "int");
+}
+
+static void collect_params_recursive(ASTNode* node, ParamCtx* ctx) {
+    if (!node || !ctx) return;
+
+    if (node->type == AST_STATEMENT_LIST) {
+        for (int i = 0; i < node->child_count; i++) {
+            collect_params_recursive(node->children[i], ctx);
+        }
+        return;
+    }
+
+    if (node->type != AST_ARG_DEF) {
+        return;
+    }
+
+    /* Current arg */
+    const char* t = argdef_get_type(node);
+    if (ctx->add_to_scope) {
+        symbol_table_add_parameter(ctx->st, node->value, (char*)t, ctx->next_index);
+    }
+    paramctx_push_type(ctx, t);
+    ctx->next_index++;
+
+    /* Nested args (parser appends them as children of the first arg) */
+    for (int i = 0; i < node->child_count; i++) {
+        ASTNode* c = node->children[i];
+        if (c && c->type == AST_ARG_DEF) {
+            collect_params_recursive(c, ctx);
+        }
+        else if (c && c->type == AST_STATEMENT_LIST) {
+            collect_params_recursive(c, ctx);
+        }
+    }
+}
+
+static void collect_params(ASTNode* params_node, SymbolTable* st, int add_to_scope,
+    int* out_count, char*** out_types) {
+    ParamCtx ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.st = st;
+    ctx.add_to_scope = add_to_scope;
+    ctx.next_index = 1;
+
+    if (params_node) {
+        collect_params_recursive(params_node, &ctx);
+    }
+
+    if (out_count) *out_count = ctx.count;
+    if (out_types) *out_types = ctx.types;
+    else {
+        /* Caller doesn't want types -> free */
+        for (int i = 0; i < ctx.count; i++) free(ctx.types[i]);
+        free(ctx.types);
+    }
+}
+
+
 /* Создание таблицы символов */
 SymbolTable* symbol_table_create(void) {
     SymbolTable* st = (SymbolTable*)malloc(sizeof(SymbolTable));
@@ -866,7 +973,24 @@ void semantic_analyze(ASTNode* ast, SymbolTable* st) {
             }
         }
 
-        symbol_table_add_function(st, func_name, return_type, 0, NULL);
+        /* Собираем параметры из сигнатуры (один или несколько) */
+        int param_count = 0;
+        char** param_types = NULL;
+        if (func_def->child_count > 0 && func_def->children[0]->type == AST_FUNCTION_SIGNATURE) {
+            ASTNode* sig = func_def->children[0];
+            if (sig->child_count > 0) {
+                ASTNode* params_node = sig->children[0];
+                collect_params(params_node, st, 0, &param_count, &param_types);
+            }
+        }
+
+        symbol_table_add_function(st, func_name, return_type, param_count, param_types);
+
+        /* Освобождаем временный список типов */
+        if (param_types) {
+            for (int k = 0; k < param_count; k++) free(param_types[k]);
+            free(param_types);
+        }
     }
 
     /* Второй проход: анализ каждой функции */
@@ -888,33 +1012,9 @@ void semantic_analyze(ASTNode* ast, SymbolTable* st) {
         /* Добавляем параметры функции */
         if (func_def->child_count > 0) {
             ASTNode* sig = func_def->children[0];
-            if (sig->type == AST_FUNCTION_SIGNATURE) {
-                if (sig->child_count > 0) {
-                    ASTNode* params = sig->children[0];
-                    if (params) {
-                        if (params->type == AST_ARG_DEF) {
-                            /* Один параметр */
-                            char* param_type = "int";
-                            if (params->child_count > 0 && params->children[0]->value) {
-                                param_type = params->children[0]->value;
-                            }
-                            symbol_table_add_parameter(st, params->value, param_type, 1);
-                        }
-                        else {
-                            /* Несколько параметров */
-                            for (int j = 0; j < params->child_count; j++) {
-                                ASTNode* arg = params->children[j];
-                                if (arg->type == AST_ARG_DEF) {
-                                    char* param_type = "int";
-                                    if (arg->child_count > 0 && arg->children[0]->value) {
-                                        param_type = arg->children[0]->value;
-                                    }
-                                    symbol_table_add_parameter(st, arg->value, param_type, j + 1);
-                                }
-                            }
-                        }
-                    }
-                }
+            if (sig && sig->type == AST_FUNCTION_SIGNATURE && sig->child_count > 0) {
+                /* Поддерживаем обе формы AST: список и "цепочку" ArgDef */
+                collect_params(sig->children[0], st, 1, NULL, NULL);
             }
         }
 

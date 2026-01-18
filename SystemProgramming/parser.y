@@ -106,13 +106,29 @@ argDefList:
     ;
 
 argDefListNonEmpty:
-    argDef { $$ = $1; }
+    /*
+     * Build a *flat* parameter list.
+     *
+     * Old behavior:
+     *   argDefListNonEmpty: argDefListNonEmpty COMMA argDef { $$ = addChild($1,$3); }
+     * created a *chain* where the first AST_ARG_DEF became the parent of the next.
+     * That made parameters like "(n: int, t: int)" look like:
+     *   ArgDef(n)
+     *     TypeRef(int)
+     *     ArgDef(t)
+     *       TypeRef(int)
+     *
+     * New behavior:
+     *   StatementList("params")
+     *     ArgDef(n)
+     *     ArgDef(t)
+     */
+    argDef {
+        $$ = createASTNode(AST_STATEMENT_LIST, "params", line_num);
+        addChild($$, $1);
+    }
     | argDefListNonEmpty COMMA argDef {
-        if ($1 == NULL) {
-            $$ = $3;
-        } else {
-            $$ = addChild($1, $3);
-        }
+        $$ = addChild($1, $3);
     }
     ;
 
