@@ -6,6 +6,70 @@
 #include <ctype.h>
 
 /* =========================
+ * Dynamic "din" runtime tags
+ * ========================= */
+
+#include <stdint.h>
+
+enum {
+    DIN_TAG_INT = 1,
+    DIN_TAG_FLOAT = 2,
+    DIN_TAG_CHAR = 3,
+    DIN_TAG_BOOL = 4,
+    DIN_TAG_STRING = 5
+};
+
+/* Convert 32-bit float to IEEE754 half-precision bits (imm16 for MOVF).
+   Note: arithmetic ops are still integer in the ISA; this is for literals/storage only. */
+static uint16_t float32_to_half_bits(float f) {
+    union { float f; uint32_t u; } v;
+    v.f = f;
+    uint32_t x = v.u;
+    uint32_t sign = (x >> 31) & 1u;
+    int32_t  exp = (int32_t)((x >> 23) & 0xFFu);
+    uint32_t mant = x & 0x7FFFFFu;
+
+    uint16_t h;
+    if (exp == 255) {
+        /* Inf/NaN */
+        uint16_t hm = (mant ? 0x200u : 0u);
+        h = (uint16_t)((sign << 15) | (0x1Fu << 10) | hm);
+        return h;
+    }
+
+    int32_t half_exp = exp - 127 + 15;
+    if (half_exp >= 31) {
+        /* overflow -> Inf */
+        h = (uint16_t)((sign << 15) | (0x1Fu << 10));
+        return h;
+    }
+    if (half_exp <= 0) {
+        /* subnormal/zero */
+        if (half_exp < -10) {
+            h = (uint16_t)(sign << 15);
+            return h;
+        }
+        /* mantissa with hidden leading 1 */
+        mant |= 0x800000u;
+        int shift = 1 - half_exp;
+        uint32_t half_mant = mant >> (13 + shift);
+        h = (uint16_t)((sign << 15) | (half_mant & 0x3FFu));
+        return h;
+    }
+
+    uint32_t half_mant = mant >> 13;
+    h = (uint16_t)((sign << 15) | ((uint32_t)half_exp << 10) | (half_mant & 0x3FFu));
+    return h;
+}
+
+static uint16_t parse_float_to_half_bits(const char* s) {
+    if (!s) return 0;
+    double d = strtod(s, NULL);
+    float f = (float)d;
+    return float32_to_half_bits(f);
+}
+
+/* =========================
  * String builder
  * ========================= */
 
@@ -754,6 +818,13 @@ static int cg_eval_expr(CG* cg, const ASTNode* e) {
     }
 
     switch (e->type) {
+    case AST_FLOAT_LITERAL: {
+        int r = reg_alloc(&cg->regs);
+        if (r < 0) r = 1;
+        uint16_t bits = parse_float_to_half_bits(e->value);
+        emit(cg, "    MOVF %s, #%u\n", rname(r), (unsigned)bits);
+        return r;
+    }
     case AST_LITERAL: {
         /* integer literal (signed) */
         int r = reg_alloc(&cg->regs);
@@ -1067,6 +1138,43 @@ static void mark_reachable(CG* cg, const CFGNode* start) {
  * Node emission
  * ========================= */
 
+ /* Best-effort static inference of runtime tag for din assignment. */
+static int infer_din_tag(CG* cg, const ASTNode* e) {
+    if (!e) return DIN_TAG_INT;
+    switch (e->type) {
+    case AST_CHAR_LITERAL:   return DIN_TAG_CHAR;
+    case AST_BOOL_LITERAL:   return DIN_TAG_BOOL;
+    case AST_STRING_LITERAL: return DIN_TAG_STRING;
+    case AST_FLOAT_LITERAL:  return DIN_TAG_FLOAT;
+    case AST_LITERAL:        return DIN_TAG_INT;
+    case AST_IDENTIFIER: {
+        const Symbol* s = cg ? symbol_table_lookup(cg->st, e->value) : NULL;
+        if (!s || !s->data_type) return DIN_TAG_INT;
+        if (strcmp(s->data_type, "din") == 0) return 0; /* means: copy tag from source */
+        if (strcmp(s->data_type, "float") == 0) return DIN_TAG_FLOAT;
+        if (strcmp(s->data_type, "char") == 0) return DIN_TAG_CHAR;
+        if (strcmp(s->data_type, "bool") == 0) return DIN_TAG_BOOL;
+        if (strcmp(s->data_type, "string") == 0) return DIN_TAG_STRING;
+        return DIN_TAG_INT;
+    }
+    case AST_UNARY_EXPR: {
+        if (e->child_count > 0 && infer_din_tag(cg, e->children[0]) == DIN_TAG_FLOAT) return DIN_TAG_FLOAT;
+        return DIN_TAG_INT;
+    }
+    case AST_BINARY_EXPR: {
+        if (e->child_count > 1) {
+            int t0 = infer_din_tag(cg, e->children[0]);
+            int t1 = infer_din_tag(cg, e->children[1]);
+            if (t0 == DIN_TAG_FLOAT || t1 == DIN_TAG_FLOAT) return DIN_TAG_FLOAT;
+        }
+        return DIN_TAG_INT;
+    }
+    case AST_CALL_EXPR:
+    default:
+        return DIN_TAG_INT;
+    }
+}
+
 
 static int cg_eval_assignment(CG* cg, const ASTNode* e) {
     if (!cg || !e || e->child_count < 2) {
@@ -1171,6 +1279,65 @@ static int cg_eval_assignment(CG* cg, const ASTNode* e) {
     int rv = cg_eval_expr(cg, rhs);
 
     if (sym) {
+        /* Dynamic variable: store <value, tag> as 8 bytes */
+        if (sym->data_type && strcmp(sym->data_type, "din") == 0) {
+            int r_tag = reg_alloc(&cg->regs);
+            if (r_tag < 0) { r_tag = 2; cg->regs.used[r_tag] = 1; }
+
+            int need_copy_tag = 0;
+            const Symbol* rhs_sym = NULL;
+            if (rhs && rhs->type == AST_IDENTIFIER && rhs->value) {
+                rhs_sym = cg_lookup_symbol((SymbolTable*)cg->st, rhs->value, cg->func_scope_id);
+                if (rhs_sym && rhs_sym->data_type && strcmp(rhs_sym->data_type, "din") == 0) {
+                    need_copy_tag = 1;
+                }
+            }
+
+            if (need_copy_tag) {
+                /* load tag from rhs+4 */
+                if (rhs_sym->type == SYM_GLOBAL) emit_addr_abs(cg, rhs_sym);
+                else emit_addr_stack_sym(cg, rhs_sym);
+                int r_addr2 = reg_alloc(&cg->regs);
+                if (r_addr2 < 0) { r_addr2 = 3; cg->regs.used[r_addr2] = 1; }
+                emit_ins2(cg, "MOV", rname(r_addr2), "r7");
+                emit(cg, "    ADDI %s, %s, #4\n", rname(r_addr2), rname(r_addr2));
+                if (rhs_sym->type == SYM_GLOBAL) emit_ins2(cg, "LD", rname(r_tag), rname(r_addr2));
+                else emit_ins2(cg, "LDS", rname(r_tag), rname(r_addr2));
+                reg_free(&cg->regs, r_addr2);
+            }
+            else {
+                int tag = infer_din_tag(cg, rhs);
+                if (tag <= 0) tag = DIN_TAG_INT;
+                emit(cg, "    MOVI %s, #%d\n", rname(r_tag), tag);
+            }
+
+            /* store value */
+            if (sym->type == SYM_GLOBAL) {
+                emit_addr_abs(cg, sym);
+                emit_ins2(cg, "ST", "r7", rname(rv));
+                int r_addr2 = reg_alloc(&cg->regs);
+                if (r_addr2 < 0) { r_addr2 = 3; cg->regs.used[r_addr2] = 1; }
+                emit_ins2(cg, "MOV", rname(r_addr2), "r7");
+                emit(cg, "    ADDI %s, %s, #4\n", rname(r_addr2), rname(r_addr2));
+                emit_ins2(cg, "ST", rname(r_addr2), rname(r_tag));
+                reg_free(&cg->regs, r_addr2);
+            }
+            else if (symbol_is_stack_resident(sym)) {
+                emit_addr_stack_sym(cg, sym);
+                emit_ins2(cg, "STS", "r7", rname(rv));
+                int r_addr2 = reg_alloc(&cg->regs);
+                if (r_addr2 < 0) { r_addr2 = 3; cg->regs.used[r_addr2] = 1; }
+                emit_ins2(cg, "MOV", rname(r_addr2), "r7");
+                emit(cg, "    ADDI %s, %s, #4\n", rname(r_addr2), rname(r_addr2));
+                emit_ins2(cg, "STS", rname(r_addr2), rname(r_tag));
+                reg_free(&cg->regs, r_addr2);
+            }
+
+            reg_free(&cg->regs, r_tag);
+            return rv;
+        }
+
+        /* Normal store */
         if (sym->type == SYM_GLOBAL) {
             emit_addr_abs(cg, sym);
             emit_ins2(cg, "ST", "r7", rname(rv));

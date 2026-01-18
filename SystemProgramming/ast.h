@@ -44,6 +44,7 @@ typedef enum {
     AST_STRING_LITERAL,    //  Строковый литерал
     AST_BOOL_LITERAL,      // Р‘СѓР»РµРІС‹Р№ Р»РёС‚РµСЂР°Р»
     AST_CHAR_LITERAL,      // РЎРёРјРІРѕР»СЊРЅС‹Р№ Р»РёС‚РµСЂР°Р»
+    AST_FLOAT_LITERAL,     // Float literal
     AST_VAR_DECL_LIST,     // Список объявлений переменных
     AST_ARRAY_LITERAL,     // Литерал массива
     AST_ARRAY_TYPE         // Тип массива

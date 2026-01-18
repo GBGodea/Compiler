@@ -22,6 +22,7 @@ ASTNode* root_ast = NULL;
 
 %token <str> IDENTIFIER
 %token <num> INT_LITERAL
+%token <str> FLOAT_LITERAL
 %token <str> STRING_LITERAL
 %token <str> CHAR_LITERAL
 %token <str> HEX_LITERAL
@@ -29,7 +30,7 @@ ASTNode* root_ast = NULL;
 %token <str> BOOL_LITERAL
 
 %token METHOD VAR BEGIN_KW END IF THEN ELSE WHILE DO REPEAT UNTIL BREAK
-%token BOOL_TYPE BYTE_TYPE INT_TYPE UINT_TYPE LONG_TYPE ULONG_TYPE FLOAT_TYPE CHAR_TYPE STRING_TYPE
+%token BOOL_TYPE BYTE_TYPE INT_TYPE UINT_TYPE LONG_TYPE ULONG_TYPE FLOAT_TYPE DIN_TYPE CHAR_TYPE STRING_TYPE
 %token ARRAY OF
 
 %token ASSIGN
@@ -152,6 +153,7 @@ typeRef:
     | LONG_TYPE { $$ = createASTNode(AST_TYPE_REF, "long", line_num); }
     | ULONG_TYPE { $$ = createASTNode(AST_TYPE_REF, "ulong", line_num); }
     | FLOAT_TYPE { $$ = createASTNode(AST_TYPE_REF, "float", line_num); }
+    | DIN_TYPE { $$ = createASTNode(AST_TYPE_REF, "din", line_num); }
     | CHAR_TYPE { $$ = createASTNode(AST_TYPE_REF, "char", line_num); }
     | STRING_TYPE { $$ = createASTNode(AST_TYPE_REF, "string", line_num); }
     | IDENTIFIER { 
@@ -433,6 +435,10 @@ primary_expr:
         char buf[32];
         sprintf(buf, "%d", $1);
         $$ = createASTNode(AST_LITERAL, buf, line_num);
+    }
+    | FLOAT_LITERAL {
+        $$ = createASTNode(AST_FLOAT_LITERAL, $1, line_num);
+        free($1);
     }
     | STRING_LITERAL { 
         $$ = createASTNode(AST_STRING_LITERAL, $1, line_num);

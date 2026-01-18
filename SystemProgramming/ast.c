@@ -74,6 +74,7 @@ const char* getNodeTypeName(ASTNodeType type) {
     case AST_STRING_LITERAL:    return "StringLiteral";
     case AST_BOOL_LITERAL:      return "BoolLiteral";
     case AST_CHAR_LITERAL:      return "CharLiteral";
+    case AST_FLOAT_LITERAL:     return "FloatLiteral";
     case AST_VAR_DECL_LIST:     return "VarDeclList";
     case AST_ARRAY_LITERAL:     return "ArrayLiteral";
     case AST_ARRAY_TYPE:        return "ArrayType";

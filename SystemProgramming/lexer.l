@@ -15,6 +15,7 @@ DIGIT       [0-9]
 LETTER      [a-zA-Z_]
 IDENTIFIER  {LETTER}({LETTER}|{DIGIT})*
 INTEGER     {DIGIT}+
+FLOAT       (({DIGIT}+"."{DIGIT}*)|({DIGIT}*"."{DIGIT}+))([eE][+-]?{DIGIT}+)?|({DIGIT}+[eE][+-]?{DIGIT}+)
 HEX         0[xX][0-9a-fA-F]+
 BINARY      0[bB][01]+
 WHITESPACE  [ \t]+
@@ -54,6 +55,7 @@ NEWLINE     [\r\n]
 "long"              { return LONG_TYPE; }
 "ulong"             { return ULONG_TYPE; }
 "float"             { return FLOAT_TYPE; }
+"din"               { return DIN_TYPE; }
 "char"              { return CHAR_TYPE; }
 "string"            { return STRING_TYPE; }
 "array"             { return ARRAY; }
@@ -87,6 +89,7 @@ NEWLINE     [\r\n]
 ":"                 { return COLON; }
 ";"                 { return SEMICOLON; }
 
+{FLOAT}             { yylval.str = strdup(yytext); return FLOAT_LITERAL; }
 {INTEGER}           { yylval.num = atoi(yytext); return INT_LITERAL; }
 {HEX}               { yylval.str = strdup(yytext); return HEX_LITERAL; }
 {BINARY}            { yylval.str = strdup(yytext); return BITS_LITERAL; }

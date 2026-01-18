@@ -13,6 +13,7 @@
  */
 static int data_type_size_bytes(const char* t) {
     if (!t) return 4;
+    if (strcmp(t, "din") == 0) return 8; /* value (4) + runtime tag (4) */
     /* normalize common names produced by parser */
     if (strcmp(t, "long") == 0 || strcmp(t, "ulong") == 0) return 8;
     /* everything else is a word for now */
