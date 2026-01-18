@@ -1,104 +1,104 @@
-#pragma once
+п»ї#pragma once
 #ifndef SEMANTIC_H
 #define SEMANTIC_H
 
 #include "ast.h"
 
 typedef enum {
-    SYM_GLOBAL = 0,    // Глобальная переменная
-    SYM_LOCAL = 1,     // Локальная переменная
-    SYM_FUNCTION = 2,  // Функция
-    SYM_PARAMETER = 3, // Параметр функции
-    SYM_CONSTANT = 4   // Константа
+    SYM_GLOBAL = 0,    // Р“Р»РѕР±Р°Р»СЊРЅР°СЏ РїРµСЂРµРјРµРЅРЅР°СЏ
+    SYM_LOCAL = 1,     // Р›РѕРєР°Р»СЊРЅР°СЏ РїРµСЂРµРјРµРЅРЅР°СЏ
+    SYM_FUNCTION = 2,  // Р¤СѓРЅРєС†РёСЏ
+    SYM_PARAMETER = 3, // РџР°СЂР°РјРµС‚СЂ С„СѓРЅРєС†РёРё
+    SYM_CONSTANT = 4   // РљРѕРЅСЃС‚Р°РЅС‚Р°
 } SymbolType;
 
 typedef enum {
-    SCOPE_GLOBAL = 0,   // Глобальная область видимости
-    SCOPE_FUNCTION = 1, // Область видимости функции
-    SCOPE_BLOCK = 2     // Область видимости блока
+    SCOPE_GLOBAL = 0,   // Р“Р»РѕР±Р°Р»СЊРЅР°СЏ РѕР±Р»Р°СЃС‚СЊ РІРёРґРёРјРѕСЃС‚Рё
+    SCOPE_FUNCTION = 1, // РћР±Р»Р°СЃС‚СЊ РІРёРґРёРјРѕСЃС‚Рё С„СѓРЅРєС†РёРё
+    SCOPE_BLOCK = 2     // РћР±Р»Р°СЃС‚СЊ РІРёРґРёРјРѕСЃС‚Рё Р±Р»РѕРєР°
 } ScopeType;
 
 typedef struct Scope {
-    int id;                   // ID области видимости
-    ScopeType type;           // Тип области
-    char* name;               // Имя области (имя функции или NULL)
-    struct Scope* parent;     // Родительская область
-    int level;                // Уровень вложенности
-    int local_offset;         // Текущий оффсет для локальных переменных
-    int param_offset;         // Текущий оффсет для параметров
+    int id;                   // ID РѕР±Р»Р°СЃС‚Рё РІРёРґРёРјРѕСЃС‚Рё
+    ScopeType type;           // РўРёРї РѕР±Р»Р°СЃС‚Рё
+    char* name;               // РРјСЏ РѕР±Р»Р°СЃС‚Рё (РёРјСЏ С„СѓРЅРєС†РёРё РёР»Рё NULL)
+    struct Scope* parent;     // Р РѕРґРёС‚РµР»СЊСЃРєР°СЏ РѕР±Р»Р°СЃС‚СЊ
+    int level;                // РЈСЂРѕРІРµРЅСЊ РІР»РѕР¶РµРЅРЅРѕСЃС‚Рё
+    int local_offset;         // РўРµРєСѓС‰РёР№ РѕС„С„СЃРµС‚ РґР»СЏ Р»РѕРєР°Р»СЊРЅС‹С… РїРµСЂРµРјРµРЅРЅС‹С…
+    int param_offset;         // РўРµРєСѓС‰РёР№ РѕС„С„СЃРµС‚ РґР»СЏ РїР°СЂР°РјРµС‚СЂРѕРІ
 } Scope;
 
 typedef struct {
-    char* name;               // Имя символа
-    SymbolType type;          // Тип символа
-    char* data_type;          // Тип данных (int, string и т.д.)
+    char* name;               // РРјСЏ СЃРёРјРІРѕР»Р°
+    SymbolType type;          // РўРёРї СЃРёРјРІРѕР»Р°
+    char* data_type;          // РўРёРї РґР°РЅРЅС‹С… (int, string Рё С‚.Рґ.)
 
-    // Информация о расположении
-    int offset;               // Смещение в стеке/глобальной памяти
-    int size;                 // Размер в байтах
-    int index;                // Индекс в таблице символов
-    int address;              // Абсолютный адрес (для глобальных)
+    // РРЅС„РѕСЂРјР°С†РёСЏ Рѕ СЂР°СЃРїРѕР»РѕР¶РµРЅРёРё
+    int offset;               // РЎРјРµС‰РµРЅРёРµ РІ СЃС‚РµРєРµ/РіР»РѕР±Р°Р»СЊРЅРѕР№ РїР°РјСЏС‚Рё
+    int size;                 // Р Р°Р·РјРµСЂ РІ Р±Р°Р№С‚Р°С…
+    int index;                // РРЅРґРµРєСЃ РІ С‚Р°Р±Р»РёС†Рµ СЃРёРјРІРѕР»РѕРІ
+    int address;              // РђР±СЃРѕР»СЋС‚РЅС‹Р№ Р°РґСЂРµСЃ (РґР»СЏ РіР»РѕР±Р°Р»СЊРЅС‹С…)
 
-    // Информация о массивах
-    int is_array;             // Является ли массивом
-    int array_size;           // Размер массива (если массив)
-    int array_dimensions;     // Количество измерений
+    // РРЅС„РѕСЂРјР°С†РёСЏ Рѕ РјР°СЃСЃРёРІР°С…
+    int is_array;             // РЇРІР»СЏРµС‚СЃСЏ Р»Рё РјР°СЃСЃРёРІРѕРј
+    int array_size;           // Р Р°Р·РјРµСЂ РјР°СЃСЃРёРІР° (РµСЃР»Рё РјР°СЃСЃРёРІ)
+    int array_dimensions;     // РљРѕР»РёС‡РµСЃС‚РІРѕ РёР·РјРµСЂРµРЅРёР№
 
-    // Область видимости
-    int scope_id;             // ID области видимости
-    Scope* scope;             // Ссылка на область видимости
-    int scope_level;          // Уровень вложенности области
+    // РћР±Р»Р°СЃС‚СЊ РІРёРґРёРјРѕСЃС‚Рё
+    int scope_id;             // ID РѕР±Р»Р°СЃС‚Рё РІРёРґРёРјРѕСЃС‚Рё
+    Scope* scope;             // РЎСЃС‹Р»РєР° РЅР° РѕР±Р»Р°СЃС‚СЊ РІРёРґРёРјРѕСЃС‚Рё
+    int scope_level;          // РЈСЂРѕРІРµРЅСЊ РІР»РѕР¶РµРЅРЅРѕСЃС‚Рё РѕР±Р»Р°СЃС‚Рё
 
-    // Флаги и метаданные
-    int is_declared;          // Объявлен ли символ
-    int is_initialized;       // Инициализирован ли
-    int is_constant;          // Является ли константой
-    int line_number;          // Номер строки объявления
-    int is_used;              // Используется ли символ
-    int is_modified;          // Изменяется ли значение
+    // Р¤Р»Р°РіРё Рё РјРµС‚Р°РґР°РЅРЅС‹Рµ
+    int is_declared;          // РћР±СЉСЏРІР»РµРЅ Р»Рё СЃРёРјРІРѕР»
+    int is_initialized;       // РРЅРёС†РёР°Р»РёР·РёСЂРѕРІР°РЅ Р»Рё
+    int is_constant;          // РЇРІР»СЏРµС‚СЃСЏ Р»Рё РєРѕРЅСЃС‚Р°РЅС‚РѕР№
+    int line_number;          // РќРѕРјРµСЂ СЃС‚СЂРѕРєРё РѕР±СЉСЏРІР»РµРЅРёСЏ
+    int is_used;              // РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ Р»Рё СЃРёРјРІРѕР»
+    int is_modified;          // РР·РјРµРЅСЏРµС‚СЃСЏ Р»Рё Р·РЅР°С‡РµРЅРёРµ
 
-    // Для функций
-    int param_count;          // Количество параметров
-    char** param_types;       // Типы параметров
-    char* return_type;        // Тип возвращаемого значения
+    // Р”Р»СЏ С„СѓРЅРєС†РёР№
+    int param_count;          // РљРѕР»РёС‡РµСЃС‚РІРѕ РїР°СЂР°РјРµС‚СЂРѕРІ
+    char** param_types;       // РўРёРїС‹ РїР°СЂР°РјРµС‚СЂРѕРІ
+    char* return_type;        // РўРёРї РІРѕР·РІСЂР°С‰Р°РµРјРѕРіРѕ Р·РЅР°С‡РµРЅРёСЏ
 } Symbol;
 
 typedef struct {
-    Symbol* symbols;          // Массив символов
-    int symbol_count;         // Количество символов
-    int max_symbols;          // Максимальное количество символов
+    Symbol* symbols;          // РњР°СЃСЃРёРІ СЃРёРјРІРѕР»РѕРІ
+    int symbol_count;         // РљРѕР»РёС‡РµСЃС‚РІРѕ СЃРёРјРІРѕР»РѕРІ
+    int max_symbols;          // РњР°РєСЃРёРјР°Р»СЊРЅРѕРµ РєРѕР»РёС‡РµСЃС‚РІРѕ СЃРёРјРІРѕР»РѕРІ
 
-    // Области видимости
-    Scope* current_scope;     // Текущая область видимости
-    Scope** scopes;           // Массив областей видимости
-    int scope_count;          // Количество областей
-    int max_scopes;           // Максимальное количество областей
-    int next_scope_id;        // Следующий ID области
+    // РћР±Р»Р°СЃС‚Рё РІРёРґРёРјРѕСЃС‚Рё
+    Scope* current_scope;     // РўРµРєСѓС‰Р°СЏ РѕР±Р»Р°СЃС‚СЊ РІРёРґРёРјРѕСЃС‚Рё
+    Scope** scopes;           // РњР°СЃСЃРёРІ РѕР±Р»Р°СЃС‚РµР№ РІРёРґРёРјРѕСЃС‚Рё
+    int scope_count;          // РљРѕР»РёС‡РµСЃС‚РІРѕ РѕР±Р»Р°СЃС‚РµР№
+    int max_scopes;           // РњР°РєСЃРёРјР°Р»СЊРЅРѕРµ РєРѕР»РёС‡РµСЃС‚РІРѕ РѕР±Р»Р°СЃС‚РµР№
+    int next_scope_id;        // РЎР»РµРґСѓСЋС‰РёР№ ID РѕР±Р»Р°СЃС‚Рё
 
-    // Счетчики для оффсетов
-    int global_offset;        // Текущий оффсет для глобальных переменных
-    int next_symbol_index;    // Следующий индекс символа
+    // РЎС‡РµС‚С‡РёРєРё РґР»СЏ РѕС„С„СЃРµС‚РѕРІ
+    int global_offset;        // РўРµРєСѓС‰РёР№ РѕС„С„СЃРµС‚ РґР»СЏ РіР»РѕР±Р°Р»СЊРЅС‹С… РїРµСЂРµРјРµРЅРЅС‹С…
+    int next_symbol_index;    // РЎР»РµРґСѓСЋС‰РёР№ РёРЅРґРµРєСЃ СЃРёРјРІРѕР»Р°
 
-    // Ошибки
+    // РћС€РёР±РєРё
     char* error_messages[1024];
     int error_count;
 
-    // Отладочная информация
-    int debug_enabled;        // Включен ли отладочный вывод
+    // РћС‚Р»Р°РґРѕС‡РЅР°СЏ РёРЅС„РѕСЂРјР°С†РёСЏ
+    int debug_enabled;        // Р’РєР»СЋС‡РµРЅ Р»Рё РѕС‚Р»Р°РґРѕС‡РЅС‹Р№ РІС‹РІРѕРґ
 } SymbolTable;
 
-/* Основные функции таблицы символов */
+/* РћСЃРЅРѕРІРЅС‹Рµ С„СѓРЅРєС†РёРё С‚Р°Р±Р»РёС†С‹ СЃРёРјРІРѕР»РѕРІ */
 SymbolTable* symbol_table_create(void);
 void symbol_table_free(SymbolTable* st);
 
-/* Управление областями видимости */
+/* РЈРїСЂР°РІР»РµРЅРёРµ РѕР±Р»Р°СЃС‚СЏРјРё РІРёРґРёРјРѕСЃС‚Рё */
 Scope* scope_create(SymbolTable* st, ScopeType type, const char* name);
 void scope_enter(SymbolTable* st, Scope* scope);
 void scope_exit(SymbolTable* st);
 Scope* scope_get_current(SymbolTable* st);
 int scope_get_level(SymbolTable* st);
 
-/* Функции добавления символов */
+/* Р¤СѓРЅРєС†РёРё РґРѕР±Р°РІР»РµРЅРёСЏ СЃРёРјРІРѕР»РѕРІ */
 void symbol_table_add_global(SymbolTable* st, const char* name, const char* data_type,
     int is_array, int array_size);
 void symbol_table_add_local(SymbolTable* st, const char* name, const char* data_type,
@@ -110,13 +110,13 @@ void symbol_table_add_function(SymbolTable* st, const char* name, const char* re
 void symbol_table_add_constant(SymbolTable* st, const char* name, const char* data_type,
     const char* value);
 
-/* Поиск символов */
+/* РџРѕРёСЃРє СЃРёРјРІРѕР»РѕРІ */
 Symbol* symbol_table_lookup(SymbolTable* st, const char* name);
 Symbol* symbol_table_lookup_current_scope(SymbolTable* st, const char* name);
 Symbol* symbol_table_lookup_global(SymbolTable* st, const char* name);
 int symbol_is_declared(SymbolTable* st, const char* name);
 
-/* Информация о символах */
+/* РРЅС„РѕСЂРјР°С†РёСЏ Рѕ СЃРёРјРІРѕР»Р°С… */
 void symbol_set_used(Symbol* sym);
 void symbol_set_modified(Symbol* sym);
 void symbol_set_initialized(Symbol* sym);
@@ -124,17 +124,17 @@ int symbol_get_size(Symbol* sym);
 int symbol_get_offset(Symbol* sym);
 const char* symbol_get_type_str(SymbolType type);
 
-/* Функции семантического анализа */
+/* Р¤СѓРЅРєС†РёРё СЃРµРјР°РЅС‚РёС‡РµСЃРєРѕРіРѕ Р°РЅР°Р»РёР·Р° */
 void semantic_analyze(ASTNode* ast, SymbolTable* symbol_table);
 void check_expression(ASTNode* expr, SymbolTable* st, int line_num);
 void mark_ast_error(ASTNode* node, const char* format, ...);
 
-/* Отладочный вывод */
+/* РћС‚Р»Р°РґРѕС‡РЅС‹Р№ РІС‹РІРѕРґ */
 void symbol_table_print(SymbolTable* st);
 void symbol_table_print_scope(SymbolTable* st, Scope* scope);
 void symbol_table_print_errors(SymbolTable* st);
 
-/* Функции для работы с ошибками */
+/* Р¤СѓРЅРєС†РёРё РґР»СЏ СЂР°Р±РѕС‚С‹ СЃ РѕС€РёР±РєР°РјРё */
 void symbol_table_add_error(SymbolTable* st, const char* error_message);
 void semantic_check_expression(ASTNode* node, SymbolTable* table, int* has_error);
 

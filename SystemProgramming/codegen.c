@@ -262,28 +262,16 @@ static int compute_frame_size_bytes(const SymbolTable* st, int function_scope_id
     Scope* func_scope = find_scope_by_id(st, function_scope_id);
     if (!func_scope) return 0;
 
-    int min_off = 0; /* самое отрицательное смещение */
-
-    for (int i = 0; i < st->symbol_count; i++) {
-        Symbol* sym = &st->symbols[i];
-        if (!sym || !sym->name) continue;
-        if (sym->type != SYM_LOCAL) continue;
-
-        Scope* sym_scope = sym->scope;
-        if (!sym_scope) sym_scope = find_scope_by_id(st, sym->scope_id);
-        if (!scope_is_descendant_of(sym_scope, func_scope)) continue;
-
-        int off = sym->offset;
-        /* если вдруг offset указывает на верх блока, а size > 4 - страхуемся */
-        if (sym->size > 4) {
-            int maybe = off - (sym->size - 4);
-            if (maybe < off) off = maybe;
-        }
-        if (off < min_off) min_off = off;
-    }
-
-    /* параметры не требуют доп. места (они уже лежат выше fp) */
-    return (min_off < 0) ? -min_off : 0;
+    /*
+     * IMPORTANT: our Symbol.offset convention (set in semantic.c) is the *top* address
+     * of an object relative to FP, and objects grow "down" in memory.
+     * The Scope.local_offset already tracks the next free top-address after allocating
+     * all locals in that scope. Therefore the required frame size is simply
+     * -local_offset (and it includes the initial -4 slot needed for word stores).
+     */
+    int lo = func_scope->local_offset;
+    if (lo >= 0) return 0;
+    return -lo;
 }
 
 /* =========================
@@ -473,6 +461,20 @@ static int emit_load_symbol(CG* cg, const Symbol* sym) {
         r = 1; /* best effort */
     }
 
+    /* arrays evaluate to their base address */
+    if (sym && sym->is_array) {
+        if (symbol_is_stack_resident(sym)) {
+            emit_addr_stack_sym(cg, sym);
+            emit_ins2(cg, "MOV", rname(r), "r7");
+            return r;
+        }
+        if (sym->type == SYM_GLOBAL) {
+            emit_addr_abs(cg, sym);
+            emit_ins2(cg, "MOV", rname(r), "r7");
+            return r;
+        }
+    }
+
     if (symbol_is_stack_resident(sym)) {
         emit_addr_stack_sym(cg, sym);
         emit_ins2(cg, "LDS", rname(r), "r7");
@@ -527,6 +529,47 @@ static long parse_int_literal(const char* s, int* ok) {
         if (ok) *ok = 1;
         return v;
     }
+    return 0;
+}
+
+static int parse_bool_literal(const char* s, int* ok) {
+    if (ok) *ok = 0;
+    if (!s) return 0;
+    if (strcmp(s, "true") == 0) { if (ok) *ok = 1; return 1; }
+    if (strcmp(s, "false") == 0) { if (ok) *ok = 1; return 0; }
+    return 0;
+}
+
+static long parse_char_literal(const char* s, int* ok) {
+    if (ok) *ok = 0;
+    if (!s) return 0;
+    size_t n = strlen(s);
+    if (n < 3 || s[0] != '\'' || s[n - 1] != '\'') return 0;
+
+    const char* inner = s + 1;
+    size_t in_len = n - 2;
+
+    if (in_len == 1) {
+        if (ok) *ok = 1;
+        return (unsigned char)inner[0];
+    }
+
+    if (in_len == 2 && inner[0] == '\\') {
+        char c = inner[1];
+        long v = 0;
+        switch (c) {
+        case 'n': v = 10; break;
+        case 'r': v = 13; break;
+        case 't': v = 9; break;
+        case '0': v = 0; break;
+        case '\\': v = '\\'; break;
+        case '\'': v = '\''; break;
+        default: v = (unsigned char)c; break;
+        }
+        if (ok) *ok = 1;
+        return v;
+    }
+
     return 0;
 }
 
@@ -735,6 +778,116 @@ static int cg_eval_expr(CG* cg, const ASTNode* e) {
         return r;
     }
 
+
+    case AST_BOOL_LITERAL: {
+        int r = reg_alloc(&cg->regs);
+        if (r < 0) r = 1;
+        int ok = 0;
+        int v = parse_bool_literal(e->value, &ok);
+        if (!ok) v = 0;
+        emit(cg, "    MOVI %s, #%d\n", rname(r), v);
+        return r;
+    }
+
+    case AST_CHAR_LITERAL: {
+        int r = reg_alloc(&cg->regs);
+        if (r < 0) r = 1;
+        int ok = 0;
+        long v = parse_char_literal(e->value, &ok);
+        if (!ok) v = 0;
+        emit(cg, "    MOVI %s, #%ld\n", rname(r), v);
+        return r;
+    }
+
+    case AST_INDEX_EXPR: {
+        /* array indexing: base[index] (only 1D) */
+        const ASTNode* base = (e->child_count > 0) ? e->children[0] : NULL;
+        const ASTNode* idxList = (e->child_count > 1) ? e->children[1] : NULL;
+        const ASTNode* idxExpr = (idxList && idxList->child_count > 0) ? idxList->children[0] : NULL;
+
+        const Symbol* sym = NULL;
+        int is_stack = 1;
+
+        int r_addr = reg_alloc(&cg->regs);
+        if (r_addr < 0) { r_addr = 1; cg->regs.used[r_addr] = 1; }
+
+        if (base && base->type == AST_IDENTIFIER && base->value) {
+            sym = cg_lookup_symbol((SymbolTable*)cg->st, base->value, cg->func_scope_id);
+        }
+
+        if (sym && symbol_is_stack_resident(sym)) {
+            emit_addr_stack_sym(cg, sym);
+            emit_ins2(cg, "MOV", rname(r_addr), "r7");
+            is_stack = 1;
+        }
+        else if (sym && sym->type == SYM_GLOBAL) {
+            emit_addr_abs(cg, sym);
+            emit_ins2(cg, "MOV", rname(r_addr), "r7");
+            is_stack = 0;
+        }
+        else {
+            emit(cg, "    MOVI %s, #0\n", rname(r_addr));
+            is_stack = 1;
+        }
+
+        int r_idx;
+        if (idxExpr) {
+            r_idx = cg_eval_expr(cg, idxExpr);
+        }
+        else {
+            r_idx = reg_alloc(&cg->regs);
+            if (r_idx < 0) { r_idx = 2; cg->regs.used[r_idx] = 1; }
+            emit(cg, "    MOVI %s, #0\n", rname(r_idx));
+        }
+
+        /* scale index by element size (default: 4 bytes) */
+        int elem_sz = 4;
+        if (sym && sym->is_array && sym->array_size > 0 && sym->size > 0) {
+            int es = sym->size / sym->array_size;
+            if (es > 0) elem_sz = es;
+        }
+
+        if (elem_sz == 1) {
+            /* no-op */
+        }
+        else if (elem_sz == 2 || elem_sz == 4 || elem_sz == 8 || elem_sz == 16) {
+            int sh = 0;
+            if (elem_sz == 2) sh = 1;
+            else if (elem_sz == 4) sh = 2;
+            else if (elem_sz == 8) sh = 3;
+            else if (elem_sz == 16) sh = 4;
+
+            int r_sh = reg_alloc(&cg->regs);
+            if (r_sh < 0) { r_sh = 3; cg->regs.used[r_sh] = 1; }
+            emit(cg, "    MOVI %s, #%d\n", rname(r_sh), sh);
+            emit_ins3(cg, "SHL", rname(r_idx), rname(r_idx), rname(r_sh));
+            reg_free(&cg->regs, r_sh);
+        }
+        else {
+            int r_mul = reg_alloc(&cg->regs);
+            if (r_mul < 0) { r_mul = 3; cg->regs.used[r_mul] = 1; }
+            emit(cg, "    MOVI %s, #%d\n", rname(r_mul), elem_sz);
+            emit_ins3(cg, "MUL", rname(r_idx), rname(r_idx), rname(r_mul));
+            reg_free(&cg->regs, r_mul);
+        }
+
+        /* IMPORTANT: stack-allocated arrays grow downward from their top offset.
+           For stack arrays we subtract the scaled index; for globals we add. */
+        if (is_stack) emit_ins3(cg, "SUB", rname(r_addr), rname(r_addr), rname(r_idx));
+        else emit_ins3(cg, "ADD", rname(r_addr), rname(r_addr), rname(r_idx));
+        reg_free(&cg->regs, r_idx);
+
+        /* load element */
+        if (is_stack) {
+            emit_ins2(cg, "LDS", rname(r_addr), rname(r_addr));
+        }
+        else {
+            emit_ins2(cg, "LD", rname(r_addr), rname(r_addr));
+        }
+
+        return r_addr;
+    }
+
     case AST_IDENTIFIER: {
         Symbol* sym = cg_lookup_symbol(cg->st, e->value, cg->func_scope_id);
         if (!sym) {
@@ -923,12 +1076,97 @@ static int cg_eval_assignment(CG* cg, const ASTNode* e) {
         return r;
     }
 
+
     const ASTNode* lhs = e->children[0];
     const ASTNode* rhs = e->children[1];
+
+    /* indexed assignment: a[i] := rhs */
+    if (lhs && lhs->type == AST_INDEX_EXPR) {
+        const ASTNode* base = (lhs->child_count > 0) ? lhs->children[0] : NULL;
+        const ASTNode* idxList = (lhs->child_count > 1) ? lhs->children[1] : NULL;
+        const ASTNode* idxExpr = (idxList && idxList->child_count > 0) ? idxList->children[0] : NULL;
+
+        const Symbol* sym = NULL;
+        int is_stack = 1;
+
+        int r_addr = reg_alloc(&cg->regs);
+        if (r_addr < 0) { r_addr = 1; cg->regs.used[r_addr] = 1; }
+
+        if (base && base->type == AST_IDENTIFIER && base->value) {
+            sym = cg_lookup_symbol((SymbolTable*)cg->st, base->value, cg->func_scope_id);
+        }
+
+        if (sym && symbol_is_stack_resident(sym)) {
+            emit_addr_stack_sym(cg, sym);
+            emit_ins2(cg, "MOV", rname(r_addr), "r7");
+            is_stack = 1;
+        }
+        else if (sym && sym->type == SYM_GLOBAL) {
+            emit_addr_abs(cg, sym);
+            emit_ins2(cg, "MOV", rname(r_addr), "r7");
+            is_stack = 0;
+        }
+        else {
+            emit(cg, "    MOVI %s, #0\n", rname(r_addr));
+            is_stack = 1;
+        }
+
+        int r_idx;
+        if (idxExpr) r_idx = cg_eval_expr(cg, idxExpr);
+        else {
+            r_idx = reg_alloc(&cg->regs);
+            if (r_idx < 0) { r_idx = 2; cg->regs.used[r_idx] = 1; }
+            emit(cg, "    MOVI %s, #0\n", rname(r_idx));
+        }
+
+        /* scale index by element size (default: 4 bytes) */
+        int elem_sz = 4;
+        if (sym && sym->is_array && sym->array_size > 0 && sym->size > 0) {
+            int es = sym->size / sym->array_size;
+            if (es > 0) elem_sz = es;
+        }
+
+        if (elem_sz == 1) {
+            /* no-op */
+        }
+        else if (elem_sz == 2 || elem_sz == 4 || elem_sz == 8 || elem_sz == 16) {
+            int sh = 0;
+            if (elem_sz == 2) sh = 1;
+            else if (elem_sz == 4) sh = 2;
+            else if (elem_sz == 8) sh = 3;
+            else if (elem_sz == 16) sh = 4;
+
+            int r_sh = reg_alloc(&cg->regs);
+            if (r_sh < 0) { r_sh = 3; cg->regs.used[r_sh] = 1; }
+            emit(cg, "    MOVI %s, #%d\n", rname(r_sh), sh);
+            emit_ins3(cg, "SHL", rname(r_idx), rname(r_idx), rname(r_sh));
+            reg_free(&cg->regs, r_sh);
+        }
+        else {
+            int r_mul = reg_alloc(&cg->regs);
+            if (r_mul < 0) { r_mul = 3; cg->regs.used[r_mul] = 1; }
+            emit(cg, "    MOVI %s, #%d\n", rname(r_mul), elem_sz);
+            emit_ins3(cg, "MUL", rname(r_idx), rname(r_idx), rname(r_mul));
+            reg_free(&cg->regs, r_mul);
+        }
+
+        /* IMPORTANT: stack-allocated arrays grow downward from their top offset.
+           For stack arrays we subtract the scaled index; for globals we add. */
+        if (is_stack) emit_ins3(cg, "SUB", rname(r_addr), rname(r_addr), rname(r_idx));
+        else emit_ins3(cg, "ADD", rname(r_addr), rname(r_addr), rname(r_idx));
+        reg_free(&cg->regs, r_idx);
+
+        int rv = cg_eval_expr(cg, rhs);
+        if (is_stack) emit_ins2(cg, "STS", rname(r_addr), rname(rv));
+        else emit_ins2(cg, "ST", rname(r_addr), rname(rv));
+
+        reg_free(&cg->regs, r_addr);
+        return rv;
+    }
+
     if (!lhs || lhs->type != AST_IDENTIFIER || !lhs->value) {
         return cg_eval_expr(cg, rhs);
     }
-
     const Symbol* sym = cg_lookup_symbol((SymbolTable*)cg->st, lhs->value, cg->func_scope_id);
     int rv = cg_eval_expr(cg, rhs);
 

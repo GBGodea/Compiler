@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Õ≈ Œœ–≈ƒ≈Àﬂ≈Ã Á‰ÂÒ¸ - ·ÂÂÏ ËÁ parser.y
+// –ù–ï –û–ü–†–ï–î–ï–õ–Ø–ï–ú –∑–¥–µ—Å—å - –±–µ—Ä–µ–º –∏–∑ parser.y
 extern int line_num;
 
 %}
@@ -53,6 +53,7 @@ NEWLINE     [\r\n]
 "uint"              { return UINT_TYPE; }
 "long"              { return LONG_TYPE; }
 "ulong"             { return ULONG_TYPE; }
+"float"             { return FLOAT_TYPE; }
 "char"              { return CHAR_TYPE; }
 "string"            { return STRING_TYPE; }
 "array"             { return ARRAY; }

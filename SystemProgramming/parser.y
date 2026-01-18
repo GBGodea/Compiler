@@ -29,7 +29,7 @@ ASTNode* root_ast = NULL;
 %token <str> BOOL_LITERAL
 
 %token METHOD VAR BEGIN_KW END IF THEN ELSE WHILE DO REPEAT UNTIL BREAK
-%token BOOL_TYPE BYTE_TYPE INT_TYPE UINT_TYPE LONG_TYPE ULONG_TYPE CHAR_TYPE STRING_TYPE
+%token BOOL_TYPE BYTE_TYPE INT_TYPE UINT_TYPE LONG_TYPE ULONG_TYPE FLOAT_TYPE CHAR_TYPE STRING_TYPE
 %token ARRAY OF
 
 %token ASSIGN
@@ -43,7 +43,7 @@ ASTNode* root_ast = NULL;
 %type <node> source sourceItem funcDef funcSignature argDef argDefList argDefListNonEmpty
 %type <node> typeRef body varDeclarations identifierList statementBlock statementList statement
 %type <node> expr logic_expr comp_expr add_expr mul_expr unary_expr postfix_expr primary_expr exprList exprListNonEmpty
-%type <node> commaList commaListNonEmpty optionalType
+%type <node> optionalType
 
 %right ASSIGN
 %left OR
@@ -135,70 +135,62 @@ typeRef:
     | UINT_TYPE { $$ = createASTNode(AST_TYPE_REF, "uint", line_num); }
     | LONG_TYPE { $$ = createASTNode(AST_TYPE_REF, "long", line_num); }
     | ULONG_TYPE { $$ = createASTNode(AST_TYPE_REF, "ulong", line_num); }
+    | FLOAT_TYPE { $$ = createASTNode(AST_TYPE_REF, "float", line_num); }
     | CHAR_TYPE { $$ = createASTNode(AST_TYPE_REF, "char", line_num); }
     | STRING_TYPE { $$ = createASTNode(AST_TYPE_REF, "string", line_num); }
     | IDENTIFIER { 
         $$ = createASTNode(AST_TYPE_REF, $1, line_num);
         free($1);
     }
-    | ARRAY LBRACKET commaList RBRACKET OF typeRef {
+    | ARRAY LBRACKET INT_LITERAL RBRACKET OF typeRef {
         $$ = createASTNode(AST_TYPE_REF, "array", line_num);
-        if ($3) addChild($$, $3);
+        char buf[32];
+        sprintf(buf, "%d", $3);
+        ASTNode* sz = createASTNode(AST_LITERAL, buf, line_num);
+        addChild($$, sz);
         addChild($$, $6);
     }
-    ;
+;
 
-commaList:
-    { $$ = NULL; }
-    | commaListNonEmpty { $$ = $1; }
-    ;
-
-commaListNonEmpty:
-    COMMA { $$ = createASTNode(AST_LITERAL, ",", line_num); }
-    | commaListNonEmpty COMMA {
-        $$ = addChild($1, createASTNode(AST_LITERAL, ",", line_num));
-    }
-    ;
-
-/* ИЗМЕНЕНИЕ 1: Упрощаем body - создаем только один список операторов */
+/* пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 1: пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ body - пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ */
 body:
     varDeclarations BEGIN_KW statementList END SEMICOLON {
         $$ = createASTNode(AST_STATEMENT_BLOCK, "body", line_num);
         if ($1) {
-            /* Добавляем объявления переменных как часть тела */
+            /* пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ */
             addChild($$, $1);
         }
         if ($3) {
-            /* Добавляем операторы */
+            /* пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ */
             addChild($$, $3);
         }
     }
     ;
 
-/* ИЗМЕНЕНИЕ 2: Улучшаем varDeclarations */
+/* пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 2: пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ varDeclarations */
 varDeclarations:
     { $$ = NULL; }
     | varDeclarations VAR identifierList optionalType SEMICOLON {
         ASTNode* varDecl = createASTNode(AST_VAR_DECLARATION, "var", line_num);
         addChild(varDecl, $3);  /* identifierList */
-        if ($4) {  /* optionalType, если есть */
+        if ($4) {  /* optionalType, пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ */
             addChild(varDecl, $4);
         }
 
         if ($1 == NULL) {
-            /* Создаем узел списка для всех объявлений */
+            /* пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ */
             $$ = createASTNode(AST_STATEMENT_LIST, "var_declarations", line_num);
             addChild($$, varDecl);
         } else {
-            /* Добавляем новое объявление в существующий список */
+            /* пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ */
             $$ = addChild($1, varDecl);
         }
     }
     ;
 
 optionalType:
-    { $$ = NULL; }  /* Пустой тип */
-    | COLON typeRef { $$ = $2; }  /* Явный тип */
+    { $$ = NULL; }  /* пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ */
+    | COLON typeRef { $$ = $2; }  /* пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ */
     ;
 
 identifierList:
@@ -212,7 +204,7 @@ identifierList:
     }
     ;
 
-/* ИЗМЕНЕНИЕ 3: Упрощаем statementBlock - только для явных begin-end */
+/* пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 3: пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ statementBlock - пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ begin-end */
 statementBlock:
     BEGIN_KW statementList END {
         $$ = createASTNode(AST_STATEMENT_BLOCK, "begin", line_num);
@@ -228,7 +220,7 @@ statementBlock:
     }
     ;
 
-/* ИЗМЕНЕНИЕ 4: Улучшаем statementList */
+/* пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 4: пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ statementList */
 statementList:
     { 
         $$ = NULL; 
@@ -284,7 +276,7 @@ statement:
     }
     ;
 
-/* ГРАММАТИКА ВЫРАЖЕНИЙ С УЧЕТОМ ПРИОРИТЕТОВ */
+/* пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ */
 
 expr:
     logic_expr { $$ = $1; }
@@ -427,11 +419,11 @@ primary_expr:
         $$ = createASTNode(AST_LITERAL, buf, line_num);
     }
     | STRING_LITERAL { 
-        $$ = createASTNode(AST_LITERAL, $1, line_num);
+        $$ = createASTNode(AST_STRING_LITERAL, $1, line_num);
         free($1);
     }
     | CHAR_LITERAL { 
-        $$ = createASTNode(AST_LITERAL, $1, line_num);
+        $$ = createASTNode(AST_CHAR_LITERAL, $1, line_num);
         free($1);
     }
     | HEX_LITERAL { 
@@ -443,7 +435,7 @@ primary_expr:
         free($1);
     }
     | BOOL_LITERAL { 
-        $$ = createASTNode(AST_LITERAL, $1, line_num);
+        $$ = createASTNode(AST_BOOL_LITERAL, $1, line_num);
         free($1);
     }
     | LPAREN expr RPAREN {

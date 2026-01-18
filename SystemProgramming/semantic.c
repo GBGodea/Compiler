@@ -4,8 +4,23 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+/*
+ * Size model (bytes):
+ *   - Backend is word-oriented, so most scalar types occupy 4 bytes.
+ *   - Arrays use element_size * array_size.
+ *   - We keep `char` as a 4-byte scalar (ASCII code in low byte), which makes
+ *     `array of char` usable for "strings" with current instruction set.
+ */
+static int data_type_size_bytes(const char* t) {
+    if (!t) return 4;
+    /* normalize common names produced by parser */
+    if (strcmp(t, "long") == 0 || strcmp(t, "ulong") == 0) return 8;
+    /* everything else is a word for now */
+    return 4;
+}
+
 /* Вспомогательные функции */
-static void add_variables_from_list(ASTNode* id_list, SymbolTable* st, const char* data_type);
+static void add_variables_from_list(ASTNode* id_list, SymbolTable* st, const char* data_type, int is_array, int array_size);
 static void analyze_statement(ASTNode* stmt, SymbolTable* st);
 static Scope* create_function_scope(SymbolTable* st, const char* func_name);
 static void calculate_offsets(SymbolTable* st);
@@ -124,9 +139,10 @@ void symbol_table_add_global(SymbolTable* st, const char* name, const char* data
     sym->array_dimensions = is_array ? 1 : 0;
 
     /* Размер и расположение */
-    sym->size = 4;  // По умолчанию 4 байта
+    int base_size = data_type_size_bytes(data_type);
+    sym->size = base_size;
     if (is_array && array_size > 0) {
-        sym->size = 4 * array_size;
+        sym->size = base_size * array_size;
     }
 
     sym->offset = st->global_offset;
@@ -194,9 +210,10 @@ void symbol_table_add_local(SymbolTable* st, const char* name, const char* data_
     sym->array_dimensions = is_array ? 1 : 0;
 
     /* Размер и расположение */
-    sym->size = 4;  // По умолчанию 4 байта
+    int base_size = data_type_size_bytes(data_type);
+    sym->size = base_size;
     if (is_array && array_size > 0) {
-        sym->size = 4 * array_size;
+        sym->size = base_size * array_size;
     }
 
     /* Оффсет для локальных переменных отрицательный */
@@ -265,7 +282,7 @@ void symbol_table_add_parameter(SymbolTable* st, const char* name, const char* d
     sym->array_dimensions = 0;
 
     /* Размер и расположение */
-    sym->size = 4;  // Параметры - 4 байта каждый
+    sym->size = data_type_size_bytes(data_type);
 
     /* Оффсет для параметров положительный */
     sym->offset = st->current_scope->param_offset;
@@ -397,7 +414,7 @@ void symbol_table_add_constant(SymbolTable* st, const char* name, const char* da
     sym->array_dimensions = 0;
 
     /* Размер и расположение */
-    sym->size = 4;  // Константы обычно 4 байта
+    sym->size = data_type_size_bytes(data_type);
     sym->offset = 0;
     sym->address = 0;
 
@@ -639,8 +656,42 @@ void check_expression(ASTNode* expr, SymbolTable* st, int line_num) {
     }
 }
 
+
+/* Извлекаем базовый тип и информацию о массиве из typeRef.
+   Для array[N] of T возвращаем base_type=T, is_array=1, array_size=N. */
+static void extract_type_info(ASTNode* type_node, const char** base_type, int* is_array, int* array_size) {
+    if (!base_type || !is_array || !array_size) return;
+    *base_type = "int";
+    *is_array = 0;
+    *array_size = 0;
+    if (!type_node) return;
+
+    if (type_node->type != AST_TYPE_REF) {
+        if (type_node->value) *base_type = type_node->value;
+        return;
+    }
+
+    if (type_node->value && strcmp(type_node->value, "array") == 0) {
+        *is_array = 1;
+        if (type_node->child_count >= 2) {
+            ASTNode* sz = type_node->children[0];
+            ASTNode* elem = type_node->children[1];
+            if (sz && sz->value) {
+                int n = atoi(sz->value);
+                if (n > 0) *array_size = n;
+            }
+            if (elem && elem->value) {
+                *base_type = elem->value;
+            }
+        }
+        return;
+    }
+
+    if (type_node->value) *base_type = type_node->value;
+}
+
 /* Добавление переменных из списка идентификаторов */
-static void add_variables_from_list(ASTNode* id_list, SymbolTable* st, const char* data_type) {
+static void add_variables_from_list(ASTNode* id_list, SymbolTable* st, const char* data_type, int is_array, int array_size) {
     if (!id_list || !st) return;
 
     if (st->debug_enabled) {
@@ -652,10 +703,10 @@ static void add_variables_from_list(ASTNode* id_list, SymbolTable* st, const cha
     if (id_list->type == AST_IDENTIFIER) {
         /* Одиночный идентификатор */
         if (st->current_scope->type == SCOPE_GLOBAL) {
-            symbol_table_add_global(st, id_list->value, data_type, 0, 0);
+            symbol_table_add_global(st, id_list->value, data_type, is_array, array_size);
         }
         else {
-            symbol_table_add_local(st, id_list->value, data_type, 0, 0);
+            symbol_table_add_local(st, id_list->value, data_type, is_array, array_size);
         }
     }
     else if (id_list->type == AST_ID_LIST) {
@@ -664,10 +715,10 @@ static void add_variables_from_list(ASTNode* id_list, SymbolTable* st, const cha
             ASTNode* child = id_list->children[i];
             if (child && child->type == AST_IDENTIFIER) {
                 if (st->current_scope->type == SCOPE_GLOBAL) {
-                    symbol_table_add_global(st, child->value, data_type, 0, 0);
+                    symbol_table_add_global(st, child->value, data_type, is_array, array_size);
                 }
                 else {
-                    symbol_table_add_local(st, child->value, data_type, 0, 0);
+                    symbol_table_add_local(st, child->value, data_type, is_array, array_size);
                 }
             }
         }
@@ -680,39 +731,28 @@ static void analyze_statement(ASTNode* stmt, SymbolTable* st) {
 
     switch (stmt->type) {
     case AST_VAR_DECLARATION: {
-        char* data_type = "int";  // Тип по умолчанию
+        const char* base_type = "int";  // тип по умолчанию
+        int is_array = 0;
+        int array_size = 0;
 
         if (stmt->child_count >= 2) {
-            /* Есть явный тип */
             ASTNode* id_list = stmt->children[0];
-
-            /* Определяем тип */
             for (int i = 1; i < stmt->child_count; i++) {
                 ASTNode* child = stmt->children[i];
                 if (!child) continue;
-
                 if (child->type == AST_TYPE_REF) {
-                    if (child->value) {
-                        data_type = child->value;
-                        break;
-                    }
-                    else if (child->child_count > 0 && child->children[0]->value) {
-                        data_type = child->children[0]->value;
-                        break;
-                    }
+                    extract_type_info(child, &base_type, &is_array, &array_size);
+                    break;
                 }
-                else if (child->type == AST_IDENTIFIER) {
-                    data_type = child->value;
+                if (child->type == AST_IDENTIFIER && child->value) {
+                    base_type = child->value;
                     break;
                 }
             }
-
-            /* Добавляем переменные */
-            add_variables_from_list(id_list, st, data_type);
+            add_variables_from_list(id_list, st, base_type, is_array, array_size);
         }
         else if (stmt->child_count == 1) {
-            /* Без явного типа */
-            add_variables_from_list(stmt->children[0], st, data_type);
+            add_variables_from_list(stmt->children[0], st, base_type, 0, 0);
         }
         break;
     }
@@ -723,12 +763,11 @@ static void analyze_statement(ASTNode* stmt, SymbolTable* st) {
         }
         break;
 
-    case AST_IF_STATEMENT:
+    case AST_IF_STATEMENT: {
         if (stmt->child_count > 0) {
             check_expression(stmt->children[0], st, stmt->line_number);
         }
 
-        /* Входим в область видимости блока */
         Scope* if_scope = scope_create(st, SCOPE_BLOCK, "if");
         scope_enter(st, if_scope);
 
@@ -736,11 +775,11 @@ static void analyze_statement(ASTNode* stmt, SymbolTable* st) {
             analyze_statement(stmt->children[i], st);
         }
 
-        /* Выходим из области видимости */
         scope_exit(st);
         break;
+    }
 
-    case AST_WHILE_STATEMENT:
+    case AST_WHILE_STATEMENT: {
         if (stmt->child_count > 0) {
             check_expression(stmt->children[0], st, stmt->line_number);
         }
@@ -752,41 +791,38 @@ static void analyze_statement(ASTNode* stmt, SymbolTable* st) {
             scope_exit(st);
         }
         break;
+    }
 
-    case AST_REPEAT_STATEMENT:
+    case AST_REPEAT_STATEMENT: {
         if (stmt->child_count > 0) {
             Scope* repeat_scope = scope_create(st, SCOPE_BLOCK, "repeat");
             scope_enter(st, repeat_scope);
             analyze_statement(stmt->children[0], st);
             scope_exit(st);
         }
-
         if (stmt->child_count > 1) {
             check_expression(stmt->children[1], st, stmt->line_number);
         }
         break;
+    }
 
     case AST_STATEMENT_BLOCK: {
-        /* Для блока создаем область видимости только если мы не в функции */
         if (st->current_scope->type == SCOPE_FUNCTION) {
-            /* Мы уже в области функции, анализируем дочерние элементы напрямую */
             for (int i = 0; i < stmt->child_count; i++) {
                 analyze_statement(stmt->children[i], st);
             }
         }
         else {
-            /* Для обычных блоков создаем область */
             Scope* block_scope = scope_create(st, SCOPE_BLOCK, "block");
             scope_enter(st, block_scope);
-
             for (int i = 0; i < stmt->child_count; i++) {
                 analyze_statement(stmt->children[i], st);
             }
-
             scope_exit(st);
         }
         break;
     }
+
     case AST_STATEMENT_LIST: {
         for (int i = 0; i < stmt->child_count; i++) {
             analyze_statement(stmt->children[i], st);
@@ -799,9 +835,8 @@ static void analyze_statement(ASTNode* stmt, SymbolTable* st) {
     }
 }
 
-/* Семантический анализ */
-/* Семантический анализ */
-/* Семантический анализ */
+
+
 void semantic_analyze(ASTNode* ast, SymbolTable* st) {
     if (!ast || !st || ast->type != AST_PROGRAM) return;
 

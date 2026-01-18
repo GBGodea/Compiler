@@ -72,6 +72,8 @@ const char* getNodeTypeName(ASTNodeType type) {
         /* Добавьте эти строки: */
     case AST_ID_LIST:           return "IdList";
     case AST_STRING_LITERAL:    return "StringLiteral";
+    case AST_BOOL_LITERAL:      return "BoolLiteral";
+    case AST_CHAR_LITERAL:      return "CharLiteral";
     case AST_VAR_DECL_LIST:     return "VarDeclList";
     case AST_ARRAY_LITERAL:     return "ArrayLiteral";
     case AST_ARRAY_TYPE:        return "ArrayType";

@@ -2,35 +2,50 @@
   Удаленное копирование исходных файлов в "localhost"
   Команда сборки не настроена, действие пропущено.
   Вызов "make", рабочий каталог: "/home/user/projects/SystemProgramming/"
+  [*] Compiling semantic analyzer...
+  gcc -Wall -g -Wextra -c semantic.c -o semantic.o
+  
+  semantic.c: In function ‘symbol_table_add_parameter’:
+  semantic.c:247:9: warning: unused parameter ‘param_index’ [-Wunused-parameter]
+    247 |     int param_index) {
+        |     ~~~~^~~~~~~~~~~
+  semantic.c: At top level:
+  semantic.c:25:15: warning: ‘create_function_scope’ declared ‘static’ but never defined [-Wunused-function]
+     25 | static Scope* create_function_scope(SymbolTable* st, const char* func_name);
+        |               ^~~~~~~~~~~~~~~~~~~~~
+  semantic.c:562:20: warning: ‘get_return_type_from_signature’ defined but not used [-Wunused-function]
+    562 | static const char* get_return_type_from_signature(ASTNode* sig) {
+        |                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  
   [*] Compiling code generator...
   gcc -Wall -g -Wextra -c codegen.c -o codegen.o
   
-  codegen.c:521:13: warning: ‘parse_int_literal’ defined but not used [-Wunused-function]
-    521 | static long parse_int_literal(const char* s, int* ok) {
+  codegen.c:523:13: warning: ‘parse_int_literal’ defined but not used [-Wunused-function]
+    523 | static long parse_int_literal(const char* s, int* ok) {
         |             ^~~~~~~~~~~~~~~~~
-  codegen.c:499:13: warning: ‘emit_store_symbol’ defined but not used [-Wunused-function]
-    499 | static void emit_store_symbol(CG* cg, const Symbol* sym, int r_value) {
+  codegen.c:501:13: warning: ‘emit_store_symbol’ defined but not used [-Wunused-function]
+    501 | static void emit_store_symbol(CG* cg, const Symbol* sym, int r_value) {
         |             ^~~~~~~~~~~~~~~~~
+  codegen.c:250:12: warning: ‘scope_is_descendant_of’ defined but not used [-Wunused-function]
+    250 | static int scope_is_descendant_of(Scope* candidate, Scope* ancestor) {
+        |            ^~~~~~~~~~~~~~~~~~~~~~
   codegen.c: In function ‘cg_node_label’:
-  codegen.c:389:40: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 253 [-Wformat-truncation=]
-    389 |         snprintf(buf, sizeof(buf), "_L_%s_%d", cg->func_name, id);
+  codegen.c:377:40: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 253 [-Wformat-truncation=]
+    377 |         snprintf(buf, sizeof(buf), "_L_%s_%d", cg->func_name, id);
         |                                        ^~
-  codegen.c:389:36: note: directive argument in the range [0, 2147483647]
-    389 |         snprintf(buf, sizeof(buf), "_L_%s_%d", cg->func_name, id);
+  codegen.c:377:36: note: directive argument in the range [0, 2147483647]
+    377 |         snprintf(buf, sizeof(buf), "_L_%s_%d", cg->func_name, id);
         |                                    ^~~~~~~~~~
-  codegen.c:389:9: note: ‘snprintf’ output between 6 and 270 bytes into a destination of size 256
-    389 |         snprintf(buf, sizeof(buf), "_L_%s_%d", cg->func_name, id);
+  codegen.c:377:9: note: ‘snprintf’ output between 6 and 270 bytes into a destination of size 256
+    377 |         snprintf(buf, sizeof(buf), "_L_%s_%d", cg->func_name, id);
         |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   codegen.c: In function ‘cg_new_label’:
-  codegen.c:399:36: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 253 [-Wformat-truncation=]
-    399 |     snprintf(buf, sizeof(buf), "_T_%s_%s_%d", cg->func_name, prefix ? prefix : "L", id);
+  codegen.c:387:36: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 253 [-Wformat-truncation=]
+    387 |     snprintf(buf, sizeof(buf), "_T_%s_%s_%d", cg->func_name, prefix ? prefix : "L", id);
         |                                    ^~
-  codegen.c:399:5: note: ‘snprintf’ output 8 or more bytes (assuming 263) into a destination of size 256
-    399 |     snprintf(buf, sizeof(buf), "_T_%s_%s_%d", cg->func_name, prefix ? prefix : "L", id);
+  codegen.c:387:5: note: ‘snprintf’ output 8 or more bytes (assuming 263) into a destination of size 256
+    387 |     snprintf(buf, sizeof(buf), "_T_%s_%s_%d", cg->func_name, prefix ? prefix : "L", id);
         |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  
-  [*] Compiling main...
-  gcc -Wall -g -Wextra -c main.c -o main.o
   
   [*] Linking...
   gcc -Wall -g -Wextra -o cfg_builder parser.tab.o lex.yy.o ast.o cfg_builder.o semantic.o calltree.o codegen.o main.o -lfl
