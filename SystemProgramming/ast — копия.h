@@ -18,7 +18,7 @@ typedef enum {
     AST_IF_STATEMENT,
     AST_WHILE_STATEMENT,
     AST_REPEAT_STATEMENT,
-    AST_FOR_STATEMENT,
+    AST_FOR_STATEMENT,        /* <- добавлено */
     AST_BREAK_STATEMENT,
     AST_EXPR_STATEMENT,
     AST_BINARY_EXPR,
@@ -39,14 +39,15 @@ typedef enum {
     AST_ARGUMENTLIST,
     AST_BLOCK,
 
-    AST_ID_LIST,           
-    AST_STRING_LITERAL,    
-    AST_BOOL_LITERAL,      
-    AST_CHAR_LITERAL,      
-    AST_FLOAT_LITERAL,     
-    AST_VAR_DECL_LIST,     
-    AST_ARRAY_LITERAL,     
-    AST_ARRAY_TYPE         
+    /* Дополнительные значения */
+    AST_ID_LIST,           // Список идентификаторов
+    AST_STRING_LITERAL,    //  Строковый литерал
+    AST_BOOL_LITERAL,      // Р‘СѓР»РµРІС‹Р№ Р»РёС‚РµСЂР°Р»
+    AST_CHAR_LITERAL,      // РЎРёРјРІРѕР»СЊРЅС‹Р№ Р»РёС‚РµСЂР°Р»
+    AST_FLOAT_LITERAL,     // Float literal
+    AST_VAR_DECL_LIST,     // Список объявлений переменных
+    AST_ARRAY_LITERAL,     // Литерал массива
+    AST_ARRAY_TYPE         // Тип массива
 
 } ASTNodeType;
 
@@ -68,6 +69,7 @@ void printASTDot(ASTNode* node, FILE* file);
 void freeAST(ASTNode* node);
 const char* getNodeTypeName(ASTNodeType type);
 
+/* Добавляем функции для работы с ошибками */
 void ast_set_error(ASTNode* node, const char* error_message);
 void ast_set_data_type(ASTNode* node, const char* data_type);
 

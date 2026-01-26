@@ -1,5 +1,8 @@
 ﻿#include "ast.h"
 
+/* Глобальная переменная для корня AST */
+//ASTNode* root_ast = NULL;
+
 ASTNode* createASTNode(ASTNodeType type, const char* value, int line_num) {
     ASTNode* node = (ASTNode*)malloc(sizeof(ASTNode));
 
@@ -66,6 +69,7 @@ const char* getNodeTypeName(ASTNodeType type) {
     case AST_CONTINUE_STATEMENT:return "ContinueStatement";
     case AST_ARGUMENTLIST:      return "ArgumentList";
 
+        /* Добавьте эти строки: */
     case AST_ID_LIST:           return "IdList";
     case AST_STRING_LITERAL:    return "StringLiteral";
     case AST_BOOL_LITERAL:      return "BoolLiteral";

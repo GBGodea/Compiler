@@ -22,7 +22,7 @@ SEMANTIC_SRC = semantic.c
 
 CALLTREE_SRC = calltree.c
 
-CODEGEN_SRC = codegen.c              # ← ИСПРАВЛЕНО
+CODEGEN_SRC = codegen.c
 
 MAIN_SRC = main.c
 
@@ -58,14 +58,14 @@ SEMANTIC_O = semantic.o
 
 CALLTREE_O = calltree.o
 
-CODEGEN_O = codegen.o                # ← ИСПРАВЛЕНО
+CODEGEN_O = codegen.o 
 
 MAIN_O = main.o
 
 # ВСЕ объектные файлы (ДЛЯ ЛИНКОВКИ)
 
 OBJECTS = $(PARSER_O) $(LEXER_O) $(AST_O) $(CFG_O) $(SEMANTIC_O) \
-	$(CALLTREE_O) $(CODEGEN_O) $(MAIN_O)   # ← ИСПРАВЛЕНО
+	$(CALLTREE_O) $(CODEGEN_O) $(MAIN_O)
 
 # ================================================================
 # ОСНОВНАЯ ЦЕЛЬ
@@ -115,12 +115,11 @@ $(CALLTREE_O): $(CALLTREE_SRC) calltree.h ast.h
 	@echo "[*] Compiling call tree..."
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# ИСПРАВЛЕНО: Правило для кодогенератора
 $(CODEGEN_O): $(CODEGEN_SRC) codegen.h cfg.h
 	@echo "[*] Compiling code generator..."
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(MAIN_O): $(MAIN_SRC) ast.h cfg.h semantic.h calltree.h codegen.h  # ← ИСПРАВЛЕНО
+$(MAIN_O): $(MAIN_SRC) ast.h cfg.h semantic.h calltree.h codegen.h
 	@echo "[*] Compiling main..."
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -130,7 +129,7 @@ $(MAIN_O): $(MAIN_SRC) ast.h cfg.h semantic.h calltree.h codegen.h  # ← ИСП
 
 $(TARGET): $(OBJECTS)
 	@echo "[*] Linking..."
-	$(CC) $(CFLAGS) -o $@ $^ -lfl
+	$(CC) $(CFLAGS) -o $@ $^ -lfl -lm
 	@echo "[+] Build complete: $(TARGET)"
 
 # ================================================================

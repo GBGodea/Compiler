@@ -65,12 +65,14 @@ void cfg_build_from_ast(CFG* cfg, ASTNode* ast);
 void cfg_export_dot(CFG* cfg, const char* filename);
 
 void cfg_set_symbol_table(SymbolTable* table);
+// Добавим функцию, которая принимает явный scope_id
 void check_expression_semantics_with_scope(ASTNode* expr, SymbolTable* symbol_table,
     CFGNode* cfg_node, int function_scope_id);
 void cfg_check_semantics(CFG* cfg, SymbolTable* symbol_table);
 
 void cfg_free(CFG* cfg);
 
+/* Вспомогательные функции для внутреннего использования */
 void escape_string_for_dot(const char* input, char* output, size_t max_len);
 const char* get_operation_name(ASTNodeType type, const char* value);
 

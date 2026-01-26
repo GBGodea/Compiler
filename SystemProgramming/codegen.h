@@ -9,18 +9,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-    /*
-     * Noobik codegen:
-     *  - Генерирует ассемблер по CFG.
-     *  - Поддерживает несколько функций (каждая начинается с CFG_START с label
-     *    вида: "entry: <name> (scope:<id>)").
-     *
-     * Память и соглашение:
-     *  - Локальные переменные и параметры адресуются относительно fp и лежат в SRAM (LDS/STS).
-     *  - Возвращаемое значение функции — в r0.
-     */
-
     typedef struct {
         int emit_comments;      /* 1: добавлять комментарии в asm */
         int emit_start_stub;    /* 1: добавить _start: CALL _func_main; HLT */
@@ -42,4 +30,4 @@ extern "C" {
 }
 #endif
 
-#endif // CODEGEN_H
+#endif

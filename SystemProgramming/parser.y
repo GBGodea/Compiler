@@ -156,10 +156,12 @@ typeRef:
     | DIN_TYPE { $$ = createASTNode(AST_TYPE_REF, "din", line_num); }
     | CHAR_TYPE { $$ = createASTNode(AST_TYPE_REF, "char", line_num); }
     | STRING_TYPE { $$ = createASTNode(AST_TYPE_REF, "string", line_num); }
-    | IDENTIFIER { 
+    | IDENTIFIER {
         $$ = createASTNode(AST_TYPE_REF, $1, line_num);
         free($1);
     }
+
+    /* array[10] of T  — статический размер */
     | ARRAY LBRACKET INT_LITERAL RBRACKET OF typeRef {
         $$ = createASTNode(AST_TYPE_REF, "array", line_num);
         char buf[32];
@@ -167,6 +169,23 @@ typeRef:
         ASTNode* sz = createASTNode(AST_LITERAL, buf, line_num);
         addChild($$, sz);
         addChild($$, $6);
+    }
+
+    /* array[x] of T — размер выражен идентификатором (обычно dynamic) */
+    | ARRAY LBRACKET IDENTIFIER RBRACKET OF typeRef {
+        $$ = createASTNode(AST_TYPE_REF, "array", line_num);
+        ASTNode* sz = createASTNode(AST_IDENTIFIER, $3, line_num);
+        addChild($$, sz);
+        addChild($$, $6);
+        free($3);
+    }
+
+    /* array[] of T — явный динамический массив */
+    | ARRAY LBRACKET RBRACKET OF typeRef {
+        $$ = createASTNode(AST_TYPE_REF, "array", line_num);
+        ASTNode* sz = createASTNode(AST_LITERAL, "0", line_num); /* 0 => dynamic */
+        addChild($$, sz);
+        addChild($$, $5);
     }
 ;
 

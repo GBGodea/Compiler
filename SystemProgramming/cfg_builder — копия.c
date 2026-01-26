@@ -702,6 +702,14 @@ void cfg_build_from_ast(CFG* cfg, ASTNode* ast) {
         ASTNode* func_def = ast->children[i];
         if (func_def->type != AST_FUNCTION_DEF) continue;
 
+        /*
+         * External/prototype declarations have no body.
+         * The parser emits them as:
+         *   AST_FUNCTION_DEF (value = "declaration") with only the signature child.
+         * We MUST skip CFG generation for such items, otherwise codegen will emit
+         * an empty stub (_func_<name>) and you'll get duplicate symbols when you
+         * provide a real implementation in input.asm/output.asm.
+         */
         if ((func_def->value && strcmp(func_def->value, "declaration") == 0) || func_def->child_count < 2) {
             continue;
         }
@@ -996,7 +1004,7 @@ void cfg_export_dot(CFG* cfg, const char* filename) {
     fprintf(f, "  node [fontname=\"Courier\", fontsize=10];\n");
     fprintf(f, "  edge [fontname=\"Courier\", fontsize=9];\n\n");
 
-    // Создаем узлы CFG с вложенными деревьями
+    // ============ ПЕРВЫЙ ПРОХОД: Создаем узлы CFG с вложенными деревьями ============
 
     for (int i = 0; i < cfg->node_count; i++) {
         CFGNode* cfg_node = cfg->nodes[i];
@@ -1023,6 +1031,7 @@ void cfg_export_dot(CFG* cfg, const char* filename) {
             snprintf(final_label, sizeof(final_label), "Node %d", cfg_node->id);
         }
 
+        // НОВОЕ: Если у узла есть деревья выражений, создаем вложенный контейнер
         if (cfg_node->expr_tree_count > 0) {
             fprintf(f, "  subgraph cluster_node_%d {\n", cfg_node->id);
             fprintf(f, "    style=filled;\n");
@@ -1128,7 +1137,7 @@ void cfg_export_dot(CFG* cfg, const char* filename) {
     fprintf(f, "\n");
     fprintf(f, "  // ============ CFG EDGES ============\n\n");
 
-    //  между узлами CFG
+    // ============ ВТОРОЙ ПРОХОД: Ребра между узлами CFG ============
 
     for (int i = 0; i < cfg->node_count; i++) {
         CFGNode* node = cfg->nodes[i];
@@ -1219,7 +1228,7 @@ void check_expression_semantics(ASTNode* expr, SymbolTable* symbol_table, CFGNod
         break;
     }
 
-    case AST_ASSIGNMENT: {
+    case AST_ASSIGNMENT: {  // ДОБАВЛЯЕМ ЭТОТ CASE
         int has_child_error = 0;
 
         // Проверяем левую часть (идентификатор)
@@ -1361,6 +1370,8 @@ void check_expression_semantics(ASTNode* expr, SymbolTable* symbol_table, CFGNod
 void cfg_check_semantics(CFG* cfg, SymbolTable* symbol_table) {
     if (!cfg || !symbol_table) return;
 
+    // Эта функция теперь не используется, так как семантическая проверка
+    // выполняется во время построения CFG
     printf("    [INFO] Semantic checking is done during CFG construction\n");
 }
 

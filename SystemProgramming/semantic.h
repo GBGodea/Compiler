@@ -138,4 +138,4 @@ void symbol_table_print_errors(SymbolTable* st);
 void symbol_table_add_error(SymbolTable* st, const char* error_message);
 void semantic_check_expression(ASTNode* node, SymbolTable* table, int* has_error);
 
-#endif // SEMANTIC_H
+#endif

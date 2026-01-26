@@ -4,7 +4,11 @@
 #include <string.h>
 #include <stdarg.h>
 #include <ctype.h>
-#include <math.h>
+
+/* =========================
+ * Dynamic "din" runtime tags
+ * ========================= */
+
 #include <stdint.h>
 
 enum {
@@ -15,15 +19,59 @@ enum {
     DIN_TAG_STRING = 5
 };
 
-static int32_t parse_float_to_q16_16(const char* s) {
+/* Convert 32-bit float to IEEE754 half-precision bits (imm16 for MOVF).
+   Note: arithmetic ops are still integer in the ISA; this is for literals/storage only. */
+static uint16_t float32_to_half_bits(float f) {
+    union { float f; uint32_t u; } v;
+    v.f = f;
+    uint32_t x = v.u;
+    uint32_t sign = (x >> 31) & 1u;
+    int32_t  exp = (int32_t)((x >> 23) & 0xFFu);
+    uint32_t mant = x & 0x7FFFFFu;
+
+    uint16_t h;
+    if (exp == 255) {
+        /* Inf/NaN */
+        uint16_t hm = (mant ? 0x200u : 0u);
+        h = (uint16_t)((sign << 15) | (0x1Fu << 10) | hm);
+        return h;
+    }
+
+    int32_t half_exp = exp - 127 + 15;
+    if (half_exp >= 31) {
+        /* overflow -> Inf */
+        h = (uint16_t)((sign << 15) | (0x1Fu << 10));
+        return h;
+    }
+    if (half_exp <= 0) {
+        /* subnormal/zero */
+        if (half_exp < -10) {
+            h = (uint16_t)(sign << 15);
+            return h;
+        }
+        /* mantissa with hidden leading 1 */
+        mant |= 0x800000u;
+        int shift = 1 - half_exp;
+        uint32_t half_mant = mant >> (13 + shift);
+        h = (uint16_t)((sign << 15) | (half_mant & 0x3FFu));
+        return h;
+    }
+
+    uint32_t half_mant = mant >> 13;
+    h = (uint16_t)((sign << 15) | ((uint32_t)half_exp << 10) | (half_mant & 0x3FFu));
+    return h;
+}
+
+static uint16_t parse_float_to_half_bits(const char* s) {
     if (!s) return 0;
     double d = strtod(s, NULL);
-    double scaled = d * 65536.0;
-    long long v = (long long)llround(scaled);
-    if (v > 2147483647LL) v = 2147483647LL;
-    if (v < -2147483648LL) v = -2147483648LL;
-    return (int32_t)v;
+    float f = (float)d;
+    return float32_to_half_bits(f);
 }
+
+/* =========================
+ * String builder
+ * ========================= */
 
 typedef struct {
     char* buf;
@@ -441,43 +489,6 @@ static void emit_label(CG* cg, const char* lbl) {
     emit(cg, "%s:\n", lbl);
 }
 
-/* =========================
- * Immediate helpers (no 32-bit MOV in ISA)
- * ========================= */
-
-static void emit_load_u32(CG* cg, int dest_reg, uint32_t u) {
-    /* Fast path: 16-bit */
-    if ((u & 0xFFFF0000u) == 0) {
-        emit(cg, "    MOVI %s, #%u\n", rname(dest_reg), (unsigned)(u & 0xFFFFu));
-        return;
-    }
-
-    uint32_t lo = u & 0xFFFFu;
-    uint32_t hi = (u >> 16) & 0xFFFFu;
-
-    /* dest = lo */
-    emit(cg, "    MOVI %s, #%u\n", rname(dest_reg), (unsigned)lo);
-
-    /* tmp = hi << 16; dest |= tmp */
-    int r_hi = reg_alloc(&cg->regs);
-    if (r_hi < 0) { r_hi = 2; cg->regs.used[r_hi] = 1; }
-    int r_sh = reg_alloc(&cg->regs);
-    if (r_sh < 0) { r_sh = 3; cg->regs.used[r_sh] = 1; }
-
-    emit(cg, "    MOVI %s, #%u\n", rname(r_hi), (unsigned)hi);
-    emit(cg, "    MOVI %s, #16\n", rname(r_sh));
-    emit_ins3(cg, "SHL", rname(r_hi), rname(r_hi), rname(r_sh));
-    emit_ins3(cg, "OR", rname(dest_reg), rname(dest_reg), rname(r_hi));
-
-    reg_free(&cg->regs, r_sh);
-    reg_free(&cg->regs, r_hi);
-}
-
-static void emit_load_i32(CG* cg, int dest_reg, int32_t v) {
-    emit_load_u32(cg, dest_reg, (uint32_t)v);
-}
-
-
 /* compute address of stack-resident symbol into r7 */
 static void emit_addr_stack_sym(CG* cg, const Symbol* sym) {
     int off = sym ? sym->offset : 0;
@@ -763,28 +774,10 @@ static int cg_eval_binary(CG* cg, const ASTNode* e) {
     /* comparisons produce boolean */
     if (!strcmp(op, "==") || !strcmp(op, "!=") || !strcmp(op, "<") || !strcmp(op, "<=") ||
         !strcmp(op, ">") || !strcmp(op, ">=")) {
-
-        int spill_left = 0;
         int rl = cg_eval_expr(cg, e->children[0]);
-
-        /* If left comes from a CALL it lives in r0 and would be clobbered by evaluating the RHS.
-           Spill it to the stack so we can safely evaluate the RHS (which may also CALL). */
-        if (rl == 0) {
-            emit(cg, "    PUSH r0\n");
-            spill_left = 1;
-        }
-
         int rr = cg_eval_expr(cg, e->children[1]);
-
-        int lreg = rl;
-        if (spill_left) {
-            emit(cg, "    POP r7\n"); /* r7 is scratch */
-            lreg = 7;
-        }
-
-        int dest = spill_left ? 0 : rl; /* boolean result register */
-        emit_cmp_to_bool(cg, op, lreg, rr, dest);
-
+        int dest = rl; /* reuse */
+        emit_cmp_to_bool(cg, op, rl, rr, dest);
         reg_free(&cg->regs, rr);
         return dest;
     }
@@ -813,33 +806,6 @@ static int cg_eval_binary(CG* cg, const ASTNode* e) {
 
     /* arithmetic / bitwise */
     int rl = cg_eval_expr(cg, e->children[0]);
-
-    /* Same issue for arithmetic: if left is in r0, evaluating right may clobber it. */
-    if (rl == 0) {
-        emit(cg, "    PUSH r0\n"); /* save left */
-        int rr = cg_eval_expr(cg, e->children[1]); /* may CALL */
-        emit(cg, "    POP r7\n");  /* restore left into scratch */
-
-        if (!strcmp(op, "+")) emit_ins3(cg, "ADD", "r0", "r7", rname(rr));
-        else if (!strcmp(op, "-")) emit_ins3(cg, "SUB", "r0", "r7", rname(rr));
-        else if (!strcmp(op, "*")) emit_ins3(cg, "MUL", "r0", "r7", rname(rr));
-        else if (!strcmp(op, "/")) emit_ins3(cg, "DIV", "r0", "r7", rname(rr));
-        else if (!strcmp(op, "%")) emit_ins3(cg, "MOD", "r0", "r7", rname(rr));
-        else if (!strcmp(op, "&")) emit_ins3(cg, "AND", "r0", "r7", rname(rr));
-        else if (!strcmp(op, "|")) emit_ins3(cg, "OR", "r0", "r7", rname(rr));
-        else if (!strcmp(op, "^")) emit_ins3(cg, "XOR", "r0", "r7", rname(rr));
-        else if (!strcmp(op, "<<")) emit_ins3(cg, "SHL", "r0", "r7", rname(rr));
-        else if (!strcmp(op, ">>")) emit_ins3(cg, "SHR", "r0", "r7", rname(rr));
-        else {
-            cg_comment(cg, "Unknown binary op '%s' (spilled LHS)", op);
-            /* default: just return left */
-            emit_ins2(cg, "MOV", "r0", "r7");
-        }
-
-        reg_free(&cg->regs, rr);
-        return 0;
-    }
-
     int rr = cg_eval_expr(cg, e->children[1]);
 
     if (!strcmp(op, "+")) emit_ins3(cg, "ADD", rname(rl), rname(rl), rname(rr));
@@ -858,210 +824,6 @@ static int cg_eval_binary(CG* cg, const ASTNode* e) {
 
     reg_free(&cg->regs, rr);
     return rl;
-}
-
-/* =========================================================
- * "din" expression evaluation (value + runtime tag)
- * ========================================================= */
-
-typedef struct {
-    int v;   /* value register */
-    int tag; /* tag register (1=int,2=float,...) */
-} DinVal;
-
-static DinVal din_make_zero(CG* cg) {
-    DinVal dv;
-    dv.v = reg_alloc(&cg->regs);
-    if (dv.v < 0) dv.v = 1;
-    dv.tag = reg_alloc(&cg->regs);
-    if (dv.tag < 0) dv.tag = 2;
-    emit(cg, "    MOVI %s, #0\n", rname(dv.v));
-    emit(cg, "    MOVI %s, #%d\n", rname(dv.tag), DIN_TAG_INT);
-    return dv;
-}
-
-static DinVal cg_load_din_symbol(CG* cg, const Symbol* sym) {
-    DinVal dv;
-    dv.v = reg_alloc(&cg->regs);
-    if (dv.v < 0) { dv.v = 1; cg->regs.used[dv.v] = 1; }
-    dv.tag = reg_alloc(&cg->regs);
-    if (dv.tag < 0) { dv.tag = 2; cg->regs.used[dv.tag] = 1; }
-
-    /* address of din cell in r7 */
-    if (sym->type == SYM_GLOBAL) emit_addr_abs(cg, sym);
-    else emit_addr_stack_sym(cg, sym);
-
-    /* load value */
-    if (sym->type == SYM_GLOBAL) emit_ins2(cg, "LD", rname(dv.v), "r7");
-    else emit_ins2(cg, "LDS", rname(dv.v), "r7");
-
-    /* load tag from +4 */
-    int r_a2 = reg_alloc(&cg->regs);
-    if (r_a2 < 0) { r_a2 = 3; cg->regs.used[r_a2] = 1; }
-    emit_ins2(cg, "MOV", rname(r_a2), "r7");
-    emit(cg, "    ADDI %s, %s, #4\n", rname(r_a2), rname(r_a2));
-    if (sym->type == SYM_GLOBAL) emit_ins2(cg, "LD", rname(dv.tag), rname(r_a2));
-    else emit_ins2(cg, "LDS", rname(dv.tag), rname(r_a2));
-    reg_free(&cg->regs, r_a2);
-
-    return dv;
-}
-
-static void din_free(CG* cg, DinVal dv) {
-    reg_free(&cg->regs, dv.v);
-    reg_free(&cg->regs, dv.tag);
-}
-
-static void emit_shift_left_16(CG* cg, int r_val) {
-    int r_sh = reg_alloc(&cg->regs);
-    if (r_sh < 0) { r_sh = 3; cg->regs.used[r_sh] = 1; }
-    emit(cg, "    MOVI %s, #16\n", rname(r_sh));
-    emit_ins3(cg, "SHL", rname(r_val), rname(r_val), rname(r_sh));
-    reg_free(&cg->regs, r_sh);
-}
-
-static void emit_shift_right_16(CG* cg, int r_val) {
-    int r_sh = reg_alloc(&cg->regs);
-    if (r_sh < 0) { r_sh = 3; cg->regs.used[r_sh] = 1; }
-    emit(cg, "    MOVI %s, #16\n", rname(r_sh));
-    /* SAR is intended as arithmetic shift; in your .arch it's implemented as >> */
-    emit_ins3(cg, "SAR", rname(r_val), rname(r_val), rname(r_sh));
-    reg_free(&cg->regs, r_sh);
-}
-
-static DinVal cg_eval_din_expr(CG* cg, const ASTNode* e) {
-    if (!cg || !e) return din_make_zero(cg);
-
-    /* din identifier */
-    if (e->type == AST_IDENTIFIER && e->value) {
-        const Symbol* s = cg_lookup_symbol((SymbolTable*)cg->st, e->value, cg->func_scope_id);
-        if (s && s->data_type && strcmp(s->data_type, "din") == 0) {
-            return cg_load_din_symbol(cg, s);
-        }
-
-        /* fallback: treat as int */
-        DinVal dv;
-        dv.v = cg_eval_expr(cg, e);
-        dv.tag = reg_alloc(&cg->regs);
-        if (dv.tag < 0) { dv.tag = 2; cg->regs.used[dv.tag] = 1; }
-        emit(cg, "    MOVI %s, #%d\n", rname(dv.tag), DIN_TAG_INT);
-        return dv;
-    }
-
-    /* literals */
-    if (e->type == AST_FLOAT_LITERAL) {
-        DinVal dv;
-        dv.v = reg_alloc(&cg->regs);
-        if (dv.v < 0) { dv.v = 1; cg->regs.used[dv.v] = 1; }
-        dv.tag = reg_alloc(&cg->regs);
-        if (dv.tag < 0) { dv.tag = 2; cg->regs.used[dv.tag] = 1; }
-        int32_t q = parse_float_to_q16_16(e->value);
-        emit_load_i32(cg, dv.v, q);
-        emit(cg, "    MOVI %s, #%d\n", rname(dv.tag), DIN_TAG_FLOAT);
-        return dv;
-    }
-
-    if (e->type == AST_LITERAL || e->type == AST_BOOL_LITERAL || e->type == AST_CHAR_LITERAL) {
-        DinVal dv;
-        dv.v = cg_eval_expr(cg, e);
-        dv.tag = reg_alloc(&cg->regs);
-        if (dv.tag < 0) { dv.tag = 2; cg->regs.used[dv.tag] = 1; }
-        emit(cg, "    MOVI %s, #%d\n", rname(dv.tag), DIN_TAG_INT);
-        return dv;
-    }
-
-    /* unary */
-    if (e->type == AST_UNARY_EXPR && e->value && e->child_count > 0) {
-        const char* op = e->value;
-        DinVal dv = cg_eval_din_expr(cg, e->children[0]);
-        if (strcmp(op, "-") == 0) {
-            emit_ins2(cg, "NEG", rname(dv.v), rname(dv.v));
-            return dv;
-        }
-        /* other unary ops -> treat as int expr */
-        return dv;
-    }
-
-    /* binary arithmetic */
-    if ((e->type == AST_BINARY_EXPR || e->type == AST_ARITHMETIC_EXPR) && e->value && e->child_count >= 2) {
-        const char* op = e->value;
-        DinVal a = cg_eval_din_expr(cg, e->children[0]);
-        DinVal b = cg_eval_din_expr(cg, e->children[1]);
-
-        const char* l_float = cg_new_label(cg, "din_float");
-        const char* l_int = cg_new_label(cg, "din_int");
-        const char* l_end = cg_new_label(cg, "din_end");
-
-        /* if (a.tag == FLOAT || b.tag == FLOAT) goto float else int */
-        emit(cg, "    CMPI %s, #%d\n", rname(a.tag), DIN_TAG_FLOAT);
-        emit(cg, "    JEQ %s\n", l_float);
-        emit(cg, "    CMPI %s, #%d\n", rname(b.tag), DIN_TAG_FLOAT);
-        emit(cg, "    JEQ %s\n", l_float);
-        emit(cg, "    JMP %s\n", l_int);
-
-        /* int path */
-        emit_label(cg, l_int);
-        if (!strcmp(op, "+")) emit_ins3(cg, "ADD", rname(a.v), rname(a.v), rname(b.v));
-        else if (!strcmp(op, "-")) emit_ins3(cg, "SUB", rname(a.v), rname(a.v), rname(b.v));
-        else if (!strcmp(op, "*")) emit_ins3(cg, "MUL", rname(a.v), rname(a.v), rname(b.v));
-        else if (!strcmp(op, "/")) emit_ins3(cg, "DIV", rname(a.v), rname(a.v), rname(b.v));
-        else if (!strcmp(op, "%")) emit_ins3(cg, "MOD", rname(a.v), rname(a.v), rname(b.v));
-        else {
-            cg_comment(cg, "din: unsupported op '%s' -> int", op);
-        }
-        emit(cg, "    MOVI %s, #%d\n", rname(a.tag), DIN_TAG_INT);
-        emit(cg, "    JMP %s\n", l_end);
-
-        /* float path (Q16.16) */
-        emit_label(cg, l_float);
-
-        /* convert a to Q16.16 if needed */
-        const char* l_a_is_float = cg_new_label(cg, "din_a_float");
-        emit(cg, "    CMPI %s, #%d\n", rname(a.tag), DIN_TAG_FLOAT);
-        emit(cg, "    JEQ %s\n", l_a_is_float);
-        emit_shift_left_16(cg, a.v);
-        emit_label(cg, l_a_is_float);
-
-        /* convert b to Q16.16 if needed */
-        const char* l_b_is_float = cg_new_label(cg, "din_b_float");
-        emit(cg, "    CMPI %s, #%d\n", rname(b.tag), DIN_TAG_FLOAT);
-        emit(cg, "    JEQ %s\n", l_b_is_float);
-        emit_shift_left_16(cg, b.v);
-        emit_label(cg, l_b_is_float);
-
-        if (!strcmp(op, "+")) {
-            emit_ins3(cg, "ADD", rname(a.v), rname(a.v), rname(b.v));
-        }
-        else if (!strcmp(op, "-")) {
-            emit_ins3(cg, "SUB", rname(a.v), rname(a.v), rname(b.v));
-        }
-        else if (!strcmp(op, "*")) {
-            /* (a*b) >> 16 */
-            emit_ins3(cg, "MUL", rname(a.v), rname(a.v), rname(b.v));
-            emit_shift_right_16(cg, a.v);
-        }
-        else if (!strcmp(op, "/")) {
-            /* (a << 16) / b */
-            emit_shift_left_16(cg, a.v);
-            emit_ins3(cg, "DIV", rname(a.v), rname(a.v), rname(b.v));
-        }
-        else {
-            cg_comment(cg, "din: unsupported op '%s' -> float", op);
-        }
-        emit(cg, "    MOVI %s, #%d\n", rname(a.tag), DIN_TAG_FLOAT);
-        emit_label(cg, l_end);
-
-        din_free(cg, b);
-        return a;
-    }
-
-    /* fallback: evaluate as int */
-    DinVal dv;
-    dv.v = cg_eval_expr(cg, e);
-    dv.tag = reg_alloc(&cg->regs);
-    if (dv.tag < 0) { dv.tag = 2; cg->regs.used[dv.tag] = 1; }
-    emit(cg, "    MOVI %s, #%d\n", rname(dv.tag), DIN_TAG_INT);
-    return dv;
 }
 
 
@@ -1274,9 +1036,8 @@ static int cg_eval_expr(CG* cg, const ASTNode* e) {
     case AST_FLOAT_LITERAL: {
         int r = reg_alloc(&cg->regs);
         if (r < 0) r = 1;
-        /* Float is represented as fixed-point Q16.16 in 32-bit int */
-        int32_t q = parse_float_to_q16_16(e->value);
-        emit_load_i32(cg, r, q);
+        uint16_t bits = parse_float_to_half_bits(e->value);
+        emit(cg, "    MOVF %s, #%u\n", rname(r), (unsigned)bits);
         return r;
     }
     case AST_LITERAL: {
@@ -1811,22 +1572,40 @@ static int cg_eval_assignment(CG* cg, const ASTNode* e) {
         }
     }
 
-    int rv = -1;
-    int r_tag = -1;
-
-    if (sym && sym->data_type && strcmp(sym->data_type, "din") == 0) {
-        /* Runtime-tagged din assignment */
-        DinVal dv = cg_eval_din_expr(cg, rhs);
-        rv = dv.v;
-        r_tag = dv.tag;
-    }
-    else {
-        rv = cg_eval_expr(cg, rhs);
-    }
+    int rv = cg_eval_expr(cg, rhs);
 
     if (sym) {
         /* Dynamic variable: store <value, tag> as 8 bytes */
         if (sym->data_type && strcmp(sym->data_type, "din") == 0) {
+            int r_tag = reg_alloc(&cg->regs);
+            if (r_tag < 0) { r_tag = 2; cg->regs.used[r_tag] = 1; }
+
+            int need_copy_tag = 0;
+            const Symbol* rhs_sym = NULL;
+            if (rhs && rhs->type == AST_IDENTIFIER && rhs->value) {
+                rhs_sym = cg_lookup_symbol((SymbolTable*)cg->st, rhs->value, cg->func_scope_id);
+                if (rhs_sym && rhs_sym->data_type && strcmp(rhs_sym->data_type, "din") == 0) {
+                    need_copy_tag = 1;
+                }
+            }
+
+            if (need_copy_tag) {
+                /* load tag from rhs+4 */
+                if (rhs_sym->type == SYM_GLOBAL) emit_addr_abs(cg, rhs_sym);
+                else emit_addr_stack_sym(cg, rhs_sym);
+                int r_addr2 = reg_alloc(&cg->regs);
+                if (r_addr2 < 0) { r_addr2 = 3; cg->regs.used[r_addr2] = 1; }
+                emit_ins2(cg, "MOV", rname(r_addr2), "r7");
+                emit(cg, "    ADDI %s, %s, #4\n", rname(r_addr2), rname(r_addr2));
+                if (rhs_sym->type == SYM_GLOBAL) emit_ins2(cg, "LD", rname(r_tag), rname(r_addr2));
+                else emit_ins2(cg, "LDS", rname(r_tag), rname(r_addr2));
+                reg_free(&cg->regs, r_addr2);
+            }
+            else {
+                int tag = infer_din_tag(cg, rhs);
+                if (tag <= 0) tag = DIN_TAG_INT;
+                emit(cg, "    MOVI %s, #%d\n", rname(r_tag), tag);
+            }
 
             /* store value */
             if (sym->type == SYM_GLOBAL) {

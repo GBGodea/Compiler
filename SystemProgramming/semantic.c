@@ -20,6 +20,11 @@ static int data_type_size_bytes(const char* t) {
     return 4;
 }
 
+/* Размер "ссылки" на динамический массив (в байтах). Сейчас это просто адрес. */
+static int array_ref_size_bytes(void) {
+    return 4;
+}
+
 /* Вспомогательные функции */
 static void add_variables_from_list(ASTNode* id_list, SymbolTable* st, const char* data_type, int is_array, int array_size);
 static void analyze_statement(ASTNode* stmt, SymbolTable* st);
@@ -163,6 +168,35 @@ SymbolTable* symbol_table_create(void) {
     /* Отладка */
     st->debug_enabled = 0;
 
+    /* =========================
+     * Builtins
+     * =========================
+     * new_arr(n) allocates an array of N elements and returns an address ("pointer").
+     * The language has no explicit pointer type, so we model the return as int.
+     */
+    if (!symbol_table_lookup_global(st, "new_arr")) {
+        char* pts[1] = { (char*)"int" };
+        symbol_table_add_function(st, "new_arr", "int", 1, pts);
+    }
+
+    /* din I/O builtins.
+     * We expose "pretty" signatures in the source language:
+     *   method read_din(x: din);
+     *   method write_din(x: din);
+     *
+     * IMPORTANT: At the ABI level these functions still take a single 32-bit pointer
+     * to the din cell in SRAM. The code generator special-cases calls to push &x.
+     */
+    if (!symbol_table_lookup_global(st, "read_din")) {
+        char* pts[1] = { (char*)"din" };
+        symbol_table_add_function(st, "read_din", "void", 1, pts);
+    }
+    if (!symbol_table_lookup_global(st, "write_din")) {
+        char* pts[1] = { (char*)"din" };
+        symbol_table_add_function(st, "write_din", "void", 1, pts);
+    }
+
+
     return st;
 }
 
@@ -249,8 +283,15 @@ void symbol_table_add_global(SymbolTable* st, const char* name, const char* data
     /* Размер и расположение */
     int base_size = data_type_size_bytes(data_type);
     sym->size = base_size;
-    if (is_array && array_size > 0) {
-        sym->size = base_size * array_size;
+    if (is_array) {
+        if (array_size > 0) {
+            /* статический массив хранится inline */
+            sym->size = base_size * array_size;
+        }
+        else {
+            /* динамический массив хранит только адрес (ссылку) */
+            sym->size = array_ref_size_bytes();
+        }
     }
 
     sym->offset = st->global_offset;
@@ -320,8 +361,15 @@ void symbol_table_add_local(SymbolTable* st, const char* name, const char* data_
     /* Размер и расположение */
     int base_size = data_type_size_bytes(data_type);
     sym->size = base_size;
-    if (is_array && array_size > 0) {
-        sym->size = base_size * array_size;
+    if (is_array) {
+        if (array_size > 0) {
+            /* статический массив хранится inline */
+            sym->size = base_size * array_size;
+        }
+        else {
+            /* динамический массив хранит только адрес (ссылку) */
+            sym->size = array_ref_size_bytes();
+        }
     }
 
     /* Оффсет для локальных переменных отрицательный */
@@ -784,7 +832,12 @@ static void extract_type_info(ASTNode* type_node, const char** base_type, int* i
         if (type_node->child_count >= 2) {
             ASTNode* sz = type_node->children[0];
             ASTNode* elem = type_node->children[1];
-            if (sz && sz->value) {
+            /*
+             * sz может быть:
+             *   - AST_LITERAL (array[10] of T) -> статический размер
+             *   - AST_IDENTIFIER (array[x] of T) -> динамический размер, array_size=0
+             */
+            if (sz && sz->value && sz->type == AST_LITERAL) {
                 int n = atoi(sz->value);
                 if (n > 0) *array_size = n;
             }
